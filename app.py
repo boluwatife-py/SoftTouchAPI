@@ -141,6 +141,30 @@ api_endpoints = [
             "border": "4",
             "image": ""  # Placeholder for image path, add later
         }
+    },
+    {
+        "name": "Audio Transcription",
+        "method": "POST",
+        "endpoint": "http://yourusername.pythonanywhere.com/transcribe/transcribe",
+        "response_type": "text/plain",
+        "sample_response": "Hello, this is a test audio file for transcription.",
+        "description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",
+        "params": [
+            {
+                "name": "audio",
+                "type": "File",
+                "description": "Audio file to transcribe (supported formats: .mp3, .wav, .m4a)"
+            },
+            {
+                "name": "language",
+                "type": "String",
+                "description": "Optional 2-character ISO language code (e.g., 'en') to specify the audio language"
+            }
+        ],
+        "sample_request": {
+            "audio": "test_audio.mp3",
+            "language": "en"
+        }
     }
 ]
 
@@ -149,6 +173,7 @@ app.register_blueprint(api.text_api, url_prefix='/api/text')
 app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
+app.register_blueprint(api.transcribe_api, url_prefix='/api/speech/transcribe')
 
 
 # Optional: Add a basic root route for testing

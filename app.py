@@ -1,0 +1,161 @@
+from flask import Flask, jsonify
+from flask_cors import CORS
+import api.routes as api
+
+
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+
+api_endpoints = [
+    {
+        "name": "Text Analysis",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/text/analyze",
+        "response_type": "JSON",
+        "sample_response": {
+            "entities": [
+                {"text": "New York", "label": "GPE"},
+                {"text": "Apple", "label": "ORG"}
+            ],
+            "keywords": ["analysis", "example", "keywords"],
+            "word_count": 42,
+            "pos_tags": [
+                {"text": "Flask", "pos": "PROPN"},
+                {"text": "is", "pos": "AUX"}
+            ]
+        },
+        "description": "Analyzes text for named entities, keywords, word count, and POS tagging.",
+        "params": [
+            {"name": "text", "type": "String", "description": "Text to analyze"}
+        ],
+        "sample_request": {
+            "text": "Explore the power of Softtouch's 100% free APIs for text analysis and more!"
+        }
+    },
+    {
+        "name": "Sentiment Analysis",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/text/sentiment",
+        "response_type": "JSON",
+        "sample_response": {
+            "sentiment": {
+                "polarity": 0.2,
+                "subjectivity": 0.5
+            },
+            "interpretation": {
+                "polarity": "positive",
+                "subjectivity": "neutral"
+            }
+        },
+        "description": "Analyzes text sentiment and returns polarity and subjectivity scores.",
+        "params": [
+            {"name": "text", "type": "String", "description": "Text to analyze"}
+        ],
+        "sample_request": {
+            "text": "Softtouch offers free APIs to empower developers worldwide."
+        }
+    },
+    {
+        "name": "Text Translation",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/text/translate",
+        "response_type": "JSON",
+        "sample_response": {
+            "translated_text": "Hola, ¿cómo estás?",
+            "src": "en",
+            "dest": "es"
+        },
+        "description": "Translates text from a source language to a target language.",
+        "params": [
+            {"name": "text", "type": "String | List<String>", "description": "Text or list of texts to translate"},
+            {"name": "dest", "type": "String", "description": "Target language code (e.g., 'es' for Spanish)"},
+            {"name": "src", "type": "String (Optional)", "description": "Source language code (e.g., 'en' for English, defaults to 'auto')"}
+        ],
+        "sample_request": {
+            "text": "Softtouch provides free APIs for everyone.",
+            "dest": "es",
+            "src": "en"
+        }
+    },
+    {
+        "name": "Language Detection",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/text/translate/detect",
+        "response_type": "JSON",
+        "sample_response": {
+            "language": "en",
+            "confidence": 0.98
+        },
+        "description": "Detects the language of the provided text and returns the detected language code along with confidence level.",
+        "params": [
+            {"name": "text", "type": "String", "description": "Text to analyze for language detection"}
+        ],
+        "sample_request": {
+            "text": "Try Softtouch's free APIs today!"
+        }
+    },
+    {
+        "name": "Text Summarization",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/text/summarize",
+        "response_type": "JSON",
+        "sample_response": {
+            "summary": "This is a summary of the input text.",
+            "sentence_count": 3,
+            "original_length": 450
+        },
+        "description": "Extracts key sentences from input text to generate a summary.",
+        "params": [
+            {"name": "text", "type": "String", "description": "Text to summarize"},
+            {"name": "num_sentences", "type": "Integer (Optional, default=3)", "description": "Number of key sentences to include in the summary"}
+        ],
+        "sample_request": {
+            "text": "Softtouch is committed to providing 100% free APIs to developers and creators globally, fostering innovation and accessibility in technology.",
+            "num_sentences": "2"
+        }
+    },
+    {
+        "name": "QR Code Generator",
+        "method": "POST",
+        "endpoint": "http://localhost:5000/api/qr/generate",
+        "response_type": "File",
+        "sample_response": {
+            "file": "QR code in specified format (PNG, JPG, or SVG)"
+        },
+        "description": "Generates a QR code with customizable options.",
+        "params": [
+            {"name": "data", "type": "String", "description": "Text or URL to encode (required)"},
+            {"name": "format", "type": "String (Optional, default='png')", "description": "Output format: 'png', 'jpg', or 'svg'"},
+            {"name": "fill_color", "type": "String (Optional, default='#000000')", "description": "QR code color in hex format (e.g., '#FF0000')"},
+            {"name": "back_color", "type": "String (Optional, default='#FFFFFF')", "description": "Background color in hex format"},
+            {"name": "box_size", "type": "Integer (Optional, default=10)", "description": "Size of each QR box (1-50)"},
+            {"name": "border", "type": "Integer (Optional, default=4)", "description": "Border size in boxes (0-20)"},
+            {"name": "image", "type": "File (Optional, multipart/form-data only)", "description": "Optional image file (e.g., logo) to embed (not supported for SVG)"}
+        ],
+        "sample_request": {
+            "data": "https://softtouch.io/free-apis",
+            "format": "png",
+            "fill_color": "#000000",
+            "back_color": "#FFFFFF",
+            "box_size": "10",
+            "border": "4",
+            "image": ""  # Placeholder for image path, add later
+        }
+    }
+]
+
+
+app.register_blueprint(api.text_api, url_prefix='/api/text')
+app.register_blueprint(api.translate_api, url_prefix='/api/text')
+app.register_blueprint(api.summarize_api, url_prefix='/api/text')
+app.register_blueprint(api.qr_api, url_prefix='/api/qr')
+
+
+# Optional: Add a basic root route for testing
+@app.route('/api/endpoints', methods=['GET'])
+def get_endpoints():
+    return jsonify(api_endpoints)
+
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

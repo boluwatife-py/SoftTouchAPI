@@ -96,7 +96,7 @@ def transcribe_info():
     """Return API info as JSON."""
     try:
         return jsonify({
-            "endpoint": "/transcribe/transcribe",
+            "endpoint": "/transcribe",
             "method": "POST",
             "description": "Transcribes audio to text using OpenAI Whisper, returning the text directly.",
             "parameters": {

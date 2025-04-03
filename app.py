@@ -1,14 +1,8 @@
-<<<<<<< HEAD
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import api.routes as api
-import logging
-=======
-from flask import Flask, jsonify, request
-from flask_cors import CORS
-import api.routes as api
 from pydantic import BaseModel, ValidationError
->>>>>>> main
+import logging
 
 
 app = Flask(__name__)

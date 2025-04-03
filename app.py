@@ -181,11 +181,6 @@ def get_endpoints():
     return jsonify(api_endpoints)
 
 
-@app.route('/api/statistics', methods=['GET'])
-def get_endpoints():
-    return jsonify(api_endpoints)
-
-
 @app.route('/api/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints)

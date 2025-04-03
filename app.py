@@ -1,12 +1,14 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import api.routes as api
+import logging
 
 
 app = Flask(__name__)
 CORS(app)
 
 api_endpoints = [
+    #TEXR ANALYSIS
     {
         "name": "Text Analysis",
         "method": "POST",
@@ -24,6 +26,7 @@ api_endpoints = [
                 {"text": "is", "pos": "AUX"}
             ]
         },
+        "part_description": "Analyzes text for named entities, keywords, word count, and POS tagging.",
         "description": "Analyzes text for named entities, keywords, word count, and POS tagging.",
         "params": [
             {"name": "text", "type": "String", "description": "Text to analyze"}
@@ -32,6 +35,7 @@ api_endpoints = [
             "text": "Explore the power of Softtouch's 100% free APIs for text analysis and more!"
         }
     },
+    #SEBTIMENT ANALYSIS
     {
         "name": "Sentiment Analysis",
         "method": "POST",
@@ -47,6 +51,7 @@ api_endpoints = [
                 "subjectivity": "neutral"
             }
         },
+        "part_description": "Analyzes text sentiment and returns polarity and subjectivity scores.",
         "description": "Analyzes text sentiment and returns polarity and subjectivity scores.",
         "params": [
             {"name": "text", "type": "String", "description": "Text to analyze"}
@@ -55,6 +60,7 @@ api_endpoints = [
             "text": "Softtouch offers free APIs to empower developers worldwide."
         }
     },
+    #TEXT TRANSLATION
     {
         "name": "Text Translation",
         "method": "POST",
@@ -65,7 +71,8 @@ api_endpoints = [
             "src": "en",
             "dest": "es"
         },
-        "description": "Translates text from a source language to a target language.",
+        "part_description": "Translates text from a source language to a target language",
+        "description": f"Translates text from a source language to a target language. Available languages: {api.LANGUAGES}",
         "params": [
             {"name": "text", "type": "String | List<String>", "description": "Text or list of texts to translate"},
             {"name": "dest", "type": "String", "description": "Target language code (e.g., 'es' for Spanish)"},
@@ -75,8 +82,9 @@ api_endpoints = [
             "text": "Softtouch provides free APIs for everyone.",
             "dest": "es",
             "src": "en"
-        }
+        },
     },
+    #LANGUAGE DETECTIOIN
     {
         "name": "Language Detection",
         "method": "POST",
@@ -86,6 +94,7 @@ api_endpoints = [
             "language": "en",
             "confidence": 0.98
         },
+        "part_description": "Detects the language of the provided text and returns the detected language code along with confidence level.",
         "description": "Detects the language of the provided text and returns the detected language code along with confidence level.",
         "params": [
             {"name": "text", "type": "String", "description": "Text to analyze for language detection"}
@@ -94,6 +103,7 @@ api_endpoints = [
             "text": "Try Softtouch's free APIs today!"
         }
     },
+    #TEXT SUMMARIZATION
     {
         "name": "Text Summarization",
         "method": "POST",
@@ -104,6 +114,7 @@ api_endpoints = [
             "sentence_count": 3,
             "original_length": 450
         },
+        "part_description": "Extracts key sentences from input text to generate a summary.",
         "description": "Extracts key sentences from input text to generate a summary.",
         "params": [
             {"name": "text", "type": "String", "description": "Text to summarize"},
@@ -111,9 +122,10 @@ api_endpoints = [
         ],
         "sample_request": {
             "text": "Softtouch is committed to providing 100% free APIs to developers and creators globally, fostering innovation and accessibility in technology.",
-            "num_sentences": "2"
+            "num_sentences": 2
         }
     },
+    #QR CODE GENERATOR
     {
         "name": "QR Code Generator",
         "method": "POST",
@@ -122,6 +134,7 @@ api_endpoints = [
         "sample_response": {
             "file": "QR code in specified format (PNG, JPG, or SVG)"
         },
+        "[art_description": "Generates a QR code with customizable options.",
         "description": "Generates a QR code with customizable options.",
         "params": [
             {"name": "data", "type": "String", "description": "Text or URL to encode (required)"},
@@ -142,12 +155,14 @@ api_endpoints = [
             "image": ""  # Placeholder for image path, add later
         }
     },
+    # AUDIO TRANSCRIPTION
     {
         "name": "Audio Transcription",
         "method": "POST",
         "endpoint": "http://yourusername.pythonanywhere.com/transcribe/transcribe",
         "response_type": "text/plain",
         "sample_response": "Hello, this is a test audio file for transcription.",
+        "part_description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",
         "description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",
         "params": [
             {
@@ -174,6 +189,21 @@ app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 #app.register_blueprint(api.transcribe_api, url_prefix='/api/speech')
+
+
+
+
+@app.before_request
+def track_requests():
+    logging.info(f'Request : {request.method} {request.path}')
+
+@app.after_request
+def track_response(response: Response):
+    logging.info(f'Response: {response.status_code}')
+    return response
+
+
+
 
 
 @app.route('/', methods=['GET'])

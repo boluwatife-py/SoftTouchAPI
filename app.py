@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError
@@ -10,11 +10,11 @@ app = Flask(__name__)
 CORS(app)
 
 api_endpoints = [
-    #TEXR ANALYSIS
+    #TEXT ANALYSIS
     {
         "name": "Text Analysis",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/text/analyze",
+        "endpoint": "http://127.0.0.1/api/text/analyze",
         "response_type": "JSON",
         "sample_response": {
             "entities": [
@@ -41,7 +41,7 @@ api_endpoints = [
     {
         "name": "Sentiment Analysis",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/text/sentiment",
+        "endpoint": "http://127.0.0.1/api/text/sentiment",
         "response_type": "JSON",
         "sample_response": {
             "sentiment": {
@@ -66,7 +66,7 @@ api_endpoints = [
     {
         "name": "Text Translation",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/text/translate",
+        "endpoint": "http://127.0.0.1/api/text/translate",
         "response_type": "JSON",
         "sample_response": {
             "translated_text": "Hola, ¿cómo estás?",
@@ -90,7 +90,7 @@ api_endpoints = [
     {
         "name": "Language Detection",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/text/translate/detect",
+        "endpoint": "http://127.0.0.1/api/text/translate/detect",
         "response_type": "JSON",
         "sample_response": {
             "language": "en",
@@ -109,7 +109,7 @@ api_endpoints = [
     {
         "name": "Text Summarization",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/text/summarize",
+        "endpoint": "http://127.0.0.1/api/text/summarize",
         "response_type": "JSON",
         "sample_response": {
             "summary": "This is a summary of the input text.",
@@ -131,7 +131,7 @@ api_endpoints = [
     {
         "name": "QR Code Generator",
         "method": "POST",
-        "endpoint": "http://localhost:5000/api/qr/generate",
+        "endpoint": "http://127.0.0.1/api/qr/generate",
         "response_type": "File",
         "sample_response": {
             "file": "QR code in specified format (PNG, JPG, or SVG)"
@@ -220,18 +220,12 @@ app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 
 
 
-
-@app.before_request
-def track_requests():
-    logging.info(f'Request : {request.method} {request.path}')
-
 @app.after_request
-def track_response(response):
-    logging.info(f'Response: {response.status_code}')
+def track_response(response: Response):
+    if response.status_code == 500:
+        print('An error occured')
+    
     return response
-
-
-
 
 
 @app.route('/', methods=['GET'])

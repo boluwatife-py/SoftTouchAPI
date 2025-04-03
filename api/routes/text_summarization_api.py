@@ -149,7 +149,7 @@ def summarize_info():
     """Return API info as JSON."""
     try:
         return jsonify({
-            "endpoint": "/api/summarize/summarize",
+            "endpoint": "/api/summarize",
             "method": "POST",
             "description": "Summarize text by extracting key sentences based on word frequency",
             "parameters": {

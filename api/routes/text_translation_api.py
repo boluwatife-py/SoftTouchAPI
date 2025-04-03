@@ -249,7 +249,8 @@ def detect_info():
             },
             'limits': {
                 'max_text_length': MAX_TEXT_LENGTH
-            }
+            },
+            'available language': LANGUAGES.keys()
         }), 200
     except Exception as e:
         return handle_exception(e)

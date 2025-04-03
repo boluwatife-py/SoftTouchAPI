@@ -4,7 +4,7 @@ import api.routes as api
 
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+CORS(app)
 
 api_endpoints = [
     {
@@ -176,7 +176,16 @@ app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 #app.register_blueprint(api.transcribe_api, url_prefix='/api/speech')
 
 
-# Optional: Add a basic root route for testing
+@app.route('/', methods=['GET'])
+def get_endpoints():
+    return jsonify(api_endpoints)
+
+
+@app.route('/api/statistics', methods=['GET'])
+def get_endpoints():
+    return jsonify(api_endpoints)
+
+
 @app.route('/api/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints)

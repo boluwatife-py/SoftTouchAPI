@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError
@@ -199,7 +199,7 @@ def track_requests():
     logging.info(f'Request : {request.method} {request.path}')
 
 @app.after_request
-def track_response(response: Response):
+def track_response(response):
     logging.info(f'Response: {response.status_code}')
     return response
 
@@ -219,7 +219,7 @@ def statistics_endpoints():
 
 @app.route('/api/endpoints', methods=['GET'])
 def get_endpoints():
-    return jsonify(api_endpoints)
+    return jsonify(api_endpoints), 200
 
 class ContactForm(BaseModel):
     name: str
@@ -243,4 +243,4 @@ def submit_contact_form():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=80)

@@ -1,6 +1,7 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import api.routes as api
+from pydantic import BaseModel, ValidationError
 
 
 app = Flask(__name__)
@@ -189,6 +190,26 @@ def statistics_endpoints():
 @app.route('/api/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints)
+
+class ContactForm(BaseModel):
+    name: str
+    email: str
+    message: str
+    subject: str
+
+
+@app.route('/contact', methods=['POST'])
+def submit_contact_form():
+    try:
+        data = ContactForm(**request.get_json())
+        print(data)
+        return jsonify({'message': 'Form submitted successfully!'}), 200
+    except ValidationError as e:
+        return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
+    except Exception as e:
+        return jsonify({'error': 'Something went wrong on our end', 'details': e.errors()}), 500
+    finally:
+        return jsonify({'message': 'Form submitted successfully!'}), 200
 
 
 if __name__ == '__main__':

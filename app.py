@@ -177,8 +177,13 @@ app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 
 
 @app.route('/', methods=['GET'])
-def get_endpoints():
+def home_endpoints():
     return jsonify(api_endpoints)
+
+
+@app.route('/api/statistics', methods=['GET'])
+def statistics_endpoints():
+    return jsonify({'api_endpoints':""})
 
 
 @app.route('/api/endpoints', methods=['GET'])

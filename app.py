@@ -3,6 +3,7 @@ from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError
 import logging
+from typing import List
 
 
 app = Flask(__name__)
@@ -185,6 +186,32 @@ api_endpoints = [
 ]
 
 
+statistics = {
+    "totalRequests": 100,
+    "uniqueUsers": 50,
+    "timestamp": "2023-03-01T00:00:00",
+    "apis": [
+        {
+            "name": "API 1",
+            "dailyRequests": 20,
+            "weeklyRequests": 100,
+            "monthlyRequests": 500,
+            "averageResponseTime": 100,
+            "successRate": 99.9,
+            "popularity": 99.9
+        },
+        {
+            "name": "API 2",
+            "dailyRequests": 30,
+            "weeklyRequests": 150,
+            "monthlyRequests": 750,
+            "averageResponseTime": 150,
+            "successRate": 99.9,
+            "popularity": 99.9
+        }
+    ]
+}
+
 app.register_blueprint(api.text_api, url_prefix='/api/text')
 app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
@@ -212,21 +239,22 @@ def home_endpoints():
     return jsonify(api_endpoints)
 
 
-@app.route('/api/statistics', methods=['GET'])
+@app.route('/statistics', methods=['GET'])
 def statistics_endpoints():
-    return jsonify({'api_endpoints':""})
+    return jsonify(statistics)
 
 
-@app.route('/api/endpoints', methods=['GET'])
+@app.route('/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints), 200
 
+
+#SOFTTOUCH CONTACT POSITION.
 class ContactForm(BaseModel):
     name: str
     email: str
     message: str
     subject: str
-
 
 @app.route('/contact', methods=['POST'])
 def submit_contact_form():
@@ -238,8 +266,6 @@ def submit_contact_form():
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
     except Exception as e:
         return jsonify({'error': 'Something went wrong on our end', 'details': e.errors()}), 500
-    finally:
-        return jsonify({'message': 'Form submitted successfully!'}), 200
 
 
 if __name__ == '__main__':

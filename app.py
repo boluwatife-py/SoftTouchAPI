@@ -239,7 +239,7 @@ async def send(message):
     
 #REPORT ERRORS TO DEVELOPERS
 @app.after_request
-async def track_response(response: Response):
+def track_response(response: Response):
     if response.status_code == 500:
         endpoint = request.path
         send(f"An internal server error occured in {endpoint}")    

@@ -239,7 +239,7 @@ def home_endpoints():
 def statistics_endpoints():
     return jsonify(statistics)
 
-@app.route('/error')
+@app.route('/error', methods=['GET'])
 def trigger_error():
     """Route to deliberately trigger an error"""
     # Deliberately raising an exception to test error reporting

@@ -3,18 +3,27 @@ from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError
 import admin.admin as admin
-from utils.message_update import bot, send_message, TOKEN
+from utils.discord_bot import setup_discord_bot, send_error_to_discord
+from error_handler import configure_error_handlers
 from dotenv import load_dotenv
-import os
-import asyncio
+import os, logging
 
-load_dotenv()
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-API_URL = os.getenv('API_URL')
 
 # INITIALIZE APP
 app = Flask(__name__)
 CORS(app)
+
+# Configure error handlers
+configure_error_handlers(app, send_error_to_discord)
+
+load_dotenv()
+API_URL = os.getenv('API_URL')
+
+
 
 # MOCKUP API ENDPOINT RESPONSE
 api_endpoints = [
@@ -218,16 +227,7 @@ app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
 
-# ERROR REPORTING
-async def send_error_report(message):
-    await send_message(message)
 
-@app.after_request
-def track_response(response: Response):
-    if response.status_code == 500:
-        endpoint = request.path
-        asyncio.run(send_error_report(f"An internal server error occurred in {endpoint}"))
-    return response
 
 @app.route('/', methods=['GET'])
 def home_endpoints():
@@ -258,9 +258,7 @@ def submit_contact_form():
     except Exception as e:
         return jsonify({'error': 'Something went wrong on our end', 'details': str(e)}), 500
 
-async def start_bot():
-    await bot.start(TOKEN)
+
 
 if __name__ == '__main__':
-    asyncio.run(start_bot())
     app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=80)

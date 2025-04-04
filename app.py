@@ -234,13 +234,15 @@ app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 # app.register_blueprint(api.transcribe_api, url_prefix='/api/speech')
 
 
-
+async def send(message):
+    await send_message(message)
+    
 #REPORT ERRORS TO DEVELOPERS
 @app.after_request
 async def track_response(response: Response):
     if response.status_code == 500:
         endpoint = request.path
-        send_message(f"An internal server error occured in {endpoint}")    
+        send(f"An internal server error occured in {endpoint}")    
     return response
 
 

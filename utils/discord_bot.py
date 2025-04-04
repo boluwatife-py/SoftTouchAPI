@@ -83,10 +83,11 @@ def setup_discord_bot():
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
                     title="📢 Error Monitoring Bot Connected",
-                    description="The Flask application error monitor is now online and ready to report errors.",
-                    color=discord.Color.green()
+                    description="SoftTouch error monitor is now online and ready to report errors.",
+                    color=0x2ecc71  # Green color
                 )
-                test_embed.set_footer(text=f"Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                test_embed.set_footer(text=f"Error Monitor • Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                test_embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
                 
                 await error_channel.send(embed=test_embed)
                 logger.info("Successfully sent test message to Discord channel")
@@ -111,10 +112,11 @@ def setup_discord_bot():
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
                     title="📬 Contact Form Bot Connected",
-                    description="The Flask application contact form system is now online and ready to receive submissions.",
-                    color=discord.Color.blue()
+                    description="SoftTouch contact form system is now online and ready to receive submissions.",
+                    color=0x3498db  # Nice blue color
                 )
-                test_embed.set_footer(text=f"Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                test_embed.set_footer(text=f"Inbox Channel • Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                test_embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
                 
                 await inbox_channel.send(embed=test_embed)
                 logger.info("Successfully sent test message to inbox channel")
@@ -234,28 +236,50 @@ def setup_discord_bot():
 
 def create_error_embed(error_data):
     """Create a Discord embed for error reporting"""
+    # Create a visually appealing error embed with rich formatting
     embed = discord.Embed(
-        title=f"❌ Error: {error_data['error_type']}",
-        description=error_data['message'],
-        color=discord.Color.red(),
+        title=f"⚠️ Error Detected: {error_data['error_type']}",
+        description=f"**{error_data['message']}**",
+        color=0xe74c3c,  # Red color for errors
         timestamp=datetime.now()
     )
     
-    embed.add_field(name="Route", value=error_data['route'], inline=False)
-    embed.add_field(name="Method", value=error_data['method'], inline=True)
-    embed.add_field(name="Status Code", value=error_data['status_code'], inline=True)
+    # Add request information
+    embed.add_field(
+        name="🔍 Request Details",
+        value=f"**Route:** `{error_data['route']}`\n**Method:** `{error_data['method']}`\n**Status:** `{error_data['status_code']}`",
+        inline=False
+    )
     
+    # Add user agent if available
     if 'user_agent' in error_data:
-        embed.add_field(name="User Agent", value=error_data['user_agent'], inline=False)
+        embed.add_field(
+            name="🌐 User Agent",
+            value=f"`{error_data['user_agent']}`",
+            inline=False
+        )
     
+    # Add traceback with proper formatting
     if error_data.get('traceback'):
         # Truncate traceback to fit in Discord embed (max 1024 chars per field)
         traceback_str = error_data['traceback']
         if len(traceback_str) > 1000:
             traceback_str = traceback_str[:997] + "..."
-        embed.add_field(name="Traceback", value=f"```python\n{traceback_str}\n```", inline=False)
+        
+        embed.add_field(
+            name="📋 Traceback",
+            value=f"```python\n{traceback_str}\n```",
+            inline=False
+        )
     
-    embed.set_footer(text=f"Flask Application Error Monitor")
+    # Add metadata
+    current_time = datetime.now()
+    embed.set_footer(
+        text=f"Error Monitor • {current_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    
+    # Add a thumbnail icon
+    embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/585763004068839424.png?size=96")
     
     return embed
 
@@ -263,20 +287,35 @@ def create_error_embed(error_data):
 
 def create_contact_embed(contact_data):
     """Create a Discord embed for contact form submission"""
+    # Create a more visually appealing embed with rich formatting
     embed = discord.Embed(
-        title=f"📧 New Contact Form Submission",
-        description=f"Subject: {contact_data['subject']}",
-        color=discord.Color.blue(),
+        title=f"📬 New Contact Form Submission",
+        description=f"**{contact_data['subject']}**\n\n{contact_data['message']}",
+        color=0x2ecc71,  # Using a vibrant green color
         timestamp=datetime.now()
     )
     
-    # Add contact form fields
-    embed.add_field(name="Name", value=contact_data['name'], inline=True)
-    embed.add_field(name="Email", value=contact_data['email'], inline=True)
-    embed.add_field(name="Message", value=contact_data['message'], inline=False)
+    # Add sender information with icons
+    embed.add_field(
+        name="👤 From",
+        value=f"**{contact_data['name']}**",
+        inline=True
+    )
     
-    # Add timestamp
-    embed.set_footer(text=f"Received at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    embed.add_field(
+        name="📧 Email",
+        value=f"[{contact_data['email']}](mailto:{contact_data['email']})",
+        inline=True
+    )
+    
+    # Add timestamp and additional metadata
+    current_time = datetime.now()
+    embed.set_footer(
+        text=f"Contact Form • {current_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    
+    # Add a thumbnail icon
+    embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
     
     return embed
 
@@ -304,7 +343,7 @@ def send_error_to_discord(error_info):
         await error_queue.put(error_info)
         logger.info(f"Added to queue: {error_info['error_type']}")
     
-    
+    # Schedule the task in the event loop
     try:
         asyncio.run_coroutine_threadsafe(add_to_queue(), loop)
         logger.info(f"Successfully scheduled error for Discord: {error_info['error_type']}")
@@ -314,21 +353,28 @@ def send_error_to_discord(error_info):
 def send_contact_to_discord(contact_info):
     """Add contact form data to the queue for processing"""
     global inbox_channel, discord_bot, contact_queue
+    
+    # Log the contact form being processed
+    logger.info("Sending contact form submission to Discord inbox")
+    
     # Check if bot is connected and channel is available
     if not discord_bot:
         logger.warning("Discord bot not initialized")
         return
         
     if not inbox_channel:
+        logger.warning("Inbox channel not available")
         return
-
+    
+    # Get our shared event loop
     loop = _get_discord_loop()
     
+    # Create a future to put the contact form in the queue
     async def add_to_queue():
         await contact_queue.put(contact_info)
         logger.info("Added contact form to queue")
     
-    
+    # Schedule the task in the event loop
     try:
         asyncio.run_coroutine_threadsafe(add_to_queue(), loop)
         logger.info("Successfully scheduled contact form for Discord inbox")

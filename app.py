@@ -254,7 +254,18 @@ class ContactForm(BaseModel):
 def submit_contact_form():
     try:
         data = ContactForm(**request.get_json())
+        contact_data = {
+            'name': data.name,
+            'email': data.email,
+            'subject': data.subject,
+            'message': data.message,
+        }
+        
+        # Send to Discord
+        from utils.discord_bot import send_contact_to_discord
+        send_contact_to_discord(contact_data)
         return jsonify({'message': 'Form submitted successfully!'}) 
+    
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
     except Exception as e:

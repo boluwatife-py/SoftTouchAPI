@@ -218,7 +218,7 @@ statistics = {
 }
 
 #ADMIN ROUTE
-app.register_blueprint(admin.summarize_api, url_prefix='/admin')
+# app.register_blueprint(admin.summarize_api, url_prefix='/admin')
 
 #API ROUTING
 app.register_blueprint(api.translate_api, url_prefix='/api/text')

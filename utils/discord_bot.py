@@ -50,6 +50,8 @@ def setup_discord_bot():
     discord_token = os.environ.get("DISCORD_TOKEN")
     channel_id = os.environ.get("DISCORD_CHANNEL_ID")
     inbox_channel_id = os.environ.get("DISCORD_INBOX_CHANNEL_ID")
+
+    print(channel_id, inbox_channel_id)
     
     if not discord_token:
         logger.warning("DISCORD_TOKEN not found in environment variables. Discord bot will not be started.")

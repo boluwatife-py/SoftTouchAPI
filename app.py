@@ -274,7 +274,7 @@ def submit_contact_form():
     try:
         data = ContactForm(**request.get_json())
         print(data)
-        return jsonify({'message': 'Form submitted successfully!'}), 200
+        return jsonify({'message': 'Form submitted successfully!'}), 500
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
     except Exception as e:

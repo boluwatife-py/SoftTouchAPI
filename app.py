@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import api.routes as api
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, EmailStr
 import admin.admin as admin
 from utils.discord_bot import setup_discord_bot, send_error_to_discord
 from error_handler import configure_error_handlers
@@ -246,7 +246,7 @@ def get_endpoints():
 # CONTACT FORM
 class ContactForm(BaseModel):
     name: str
-    email: str
+    email: EmailStr
     message: str
     subject: str
 

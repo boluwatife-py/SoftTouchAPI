@@ -6,10 +6,6 @@ import discord
 from discord.ext import commands
 import asyncio
 import threading
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Configure logging - only show warnings and errors
 logger = logging.getLogger(__name__)
@@ -51,9 +47,9 @@ def setup_discord_bot():
     global discord_bot, client
     
     # Get Discord token from environment
-    discord_token = os.getenv("DISCORD_TOKEN")
-    channel_id = os.getenv("DISCORD_CHANNEL_ID")
-    inbox_channel_id = os.getenv("DISCORD_INBOX_CHANNEL_ID")
+    discord_token = os.environ.get("DISCORD_TOKEN")
+    channel_id = os.environ.get("DISCORD_CHANNEL_ID")
+    inbox_channel_id = os.environ.get("DISCORD_INBOX_CHANNEL_ID")
     
     if not discord_token:
         logger.warning("DISCORD_TOKEN not found in environment variables. Discord bot will not be started.")
@@ -87,8 +83,13 @@ def setup_discord_bot():
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
                     title="📢 Error Monitoring Bot Connected",
-                    description="SoftTouch error monitor is now online and ready to report errors.",
+                    description="The Flask application error monitor is now online and ready to report errors.",
                     color=0x2ecc71  # Green color
+                )
+                test_embed.add_field(
+                    name="Channel Configuration", 
+                    value="✅ This channel is now configured to receive error notifications from your application.", 
+                    inline=False
                 )
                 test_embed.set_footer(text=f"Error Monitor • Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 test_embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
@@ -116,8 +117,13 @@ def setup_discord_bot():
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
                     title="📬 Contact Form Bot Connected",
-                    description="SoftTouch contact form system is now online and ready to receive submissions.",
+                    description="The Flask application contact form system is now online and ready to receive submissions.",
                     color=0x3498db  # Nice blue color
+                )
+                test_embed.add_field(
+                    name="Channel Configuration", 
+                    value="✅ This channel is now configured to receive contact form submissions.", 
+                    inline=False
                 )
                 test_embed.set_footer(text=f"Inbox Channel • Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 test_embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")

@@ -2,26 +2,23 @@ from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError
-from typing import List
 import admin.admin as admin
 from utils.message_update import bot, send_message, TOKEN
 from dotenv import load_dotenv
-import os, asyncio
+import os
+import asyncio
 
 load_dotenv()
 
-
-
 API_URL = os.getenv('API_URL')
 
-# INITALIZE APP
+# INITIALIZE APP
 app = Flask(__name__)
 CORS(app)
 
-
 # MOCKUP API ENDPOINT RESPONSE
 api_endpoints = [
-    #TEXT ANALYSIS
+    # TEXT ANALYSIS
     {
         "name": "Text Analysis",
         "method": "POST",
@@ -48,7 +45,7 @@ api_endpoints = [
             "text": "Explore the power of Softtouch's 100% free APIs for text analysis and more!"
         }
     },
-    #SEBTIMENT ANALYSIS
+    # SENTIMENT ANALYSIS
     {
         "name": "Sentiment Analysis",
         "method": "POST",
@@ -73,7 +70,7 @@ api_endpoints = [
             "text": "Softtouch offers free APIs to empower developers worldwide."
         }
     },
-    #TEXT TRANSLATION
+    # TEXT TRANSLATION
     {
         "name": "Text Translation",
         "method": "POST",
@@ -97,7 +94,7 @@ api_endpoints = [
             "src": "en"
         },
     },
-    #LANGUAGE DETECTIOIN
+    # LANGUAGE DETECTION
     {
         "name": "Language Detection",
         "method": "POST",
@@ -116,7 +113,7 @@ api_endpoints = [
             "text": "Try Softtouch's free APIs today!"
         }
     },
-    #TEXT SUMMARIZATION
+    # TEXT SUMMARIZATION
     {
         "name": "Text Summarization",
         "method": "POST",
@@ -138,7 +135,7 @@ api_endpoints = [
             "num_sentences": 2
         }
     },
-    #QR CODE GENERATOR
+    # QR CODE GENERATOR
     {
         "name": "QR Code Generator",
         "method": "POST",
@@ -147,7 +144,7 @@ api_endpoints = [
         "sample_response": {
             "file": "QR code in specified format (PNG, JPG, or SVG)"
         },
-        "[art_description": "Generates a QR code with customizable options.",
+        "part_description": "Generates a QR code with customizable options.",
         "description": "Generates a QR code with customizable options.",
         "params": [
             {"name": "data", "type": "String", "description": "Text or URL to encode (required)"},
@@ -165,29 +162,21 @@ api_endpoints = [
             "back_color": "#FFFFFF",
             "box_size": "10",
             "border": "4",
-            "image": ""  # Placeholder for image path, add later
+            "image": ""
         }
     },
     # AUDIO TRANSCRIPTION
     {
         "name": "Audio Transcription",
         "method": "POST",
-        "endpoint": "http://yourusername.pythonanywhere.com/transcribe/transcribe",
+        "endpoint": API_URL + "/transcribe/transcribe",
         "response_type": "text/plain",
         "sample_response": "Hello, this is a test audio file for transcription.",
         "part_description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",
         "description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",
         "params": [
-            {
-                "name": "audio",
-                "type": "File",
-                "description": "Audio file to transcribe (supported formats: .mp3, .wav, .m4a)"
-            },
-            {
-                "name": "language",
-                "type": "String",
-                "description": "Optional 2-character ISO language code (e.g., 'en') to specify the audio language"
-            }
+            {"name": "audio", "type": "File", "description": "Audio file to transcribe (supported formats: .mp3, .wav, .m4a)"},
+            {"name": "language", "type": "String", "description": "Optional 2-character ISO language code (e.g., 'en') to specify the audio language"}
         ],
         "sample_request": {
             "audio": "test_audio.mp3",
@@ -196,8 +185,7 @@ api_endpoints = [
     }
 ]
 
-
-# MOCKUP STATISTCS RESPONSE DATA
+# MOCKUP STATISTICS RESPONSE DATA
 statistics = {
     "totalRequests": 100,
     "uniqueUsers": 50,
@@ -224,45 +212,36 @@ statistics = {
     ]
 }
 
-#ADMIN ROUTE
-# app.register_blueprint(admin.summarize_api, url_prefix='/admin')
-
-#API ROUTING
+# API ROUTING
 app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
-# app.register_blueprint(api.transcribe_api, url_prefix='/api/speech')
 
-
-async def send(message):
+# ERROR REPORTING
+async def send_error_report(message):
     await send_message(message)
-    
-#REPORT ERRORS TO DEVELOPERS
+
 @app.after_request
 def track_response(response: Response):
     if response.status_code == 500:
         endpoint = request.path
-        send(f"An internal server error occured in {endpoint}")    
+        asyncio.run(send_error_report(f"An internal server error occurred in {endpoint}"))
     return response
-
 
 @app.route('/', methods=['GET'])
 def home_endpoints():
     return jsonify(api_endpoints)
 
-
 @app.route('/statistics', methods=['GET'])
 def statistics_endpoints():
     return jsonify(statistics)
-
 
 @app.route('/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints), 200
 
-
-#SOFTTOUCH CONTACT POSITION.
+# CONTACT FORM
 class ContactForm(BaseModel):
     name: str
     email: str
@@ -273,16 +252,15 @@ class ContactForm(BaseModel):
 def submit_contact_form():
     try:
         data = ContactForm(**request.get_json())
-        print(data)
         return jsonify({'message': 'Form submitted successfully!'}), 500
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
     except Exception as e:
-        return jsonify({'error': 'Something went wrong on our end', 'details': e.errors()}), 500
+        return jsonify({'error': 'Something went wrong on our end', 'details': str(e)}), 500
 
 async def start_bot():
     await bot.start(TOKEN)
 
 if __name__ == '__main__':
     asyncio.run(start_bot())
-    app.run(debug=os.getenv("DEBUG"), host='0.0.0.0', port=80)
+    app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=80)

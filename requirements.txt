@@ -61,6 +61,7 @@ pycparser==2.22
 pydantic==2.11.1
 pydantic_core==2.33.0
 Pygments==2.19.1
+pynacl
 pyphen==0.17.2
 python-dotenv==1.1.0
 pytz==2025.2

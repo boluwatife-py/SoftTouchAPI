@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# Initialize Discord bot
+discord_bot = setup_discord_bot()
 # Configure error handlers
 configure_error_handlers(app, send_error_to_discord)
 

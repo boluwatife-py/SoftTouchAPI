@@ -4,8 +4,15 @@ import api.routes as api
 from pydantic import BaseModel, ValidationError
 from typing import List
 import admin.admin as admin
+from utils.message_update import bot, send_message, TOKEN
+from dotenv import load_dotenv
+import os, asyncio
 
-API_URL = 'http://127.0.0.1'
+load_dotenv()
+
+
+
+API_URL = os.getenv('API_URL')
 
 # INITALIZE APP
 app = Flask(__name__)
@@ -230,10 +237,10 @@ app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 
 #REPORT ERRORS TO DEVELOPERS
 @app.after_request
-def track_response(response: Response):
+async def track_response(response: Response):
     if response.status_code == 500:
-        print('An error occured')
-    
+        endpoint = request.path
+        send_message(f"An internal server error occured in {endpoint}")    
     return response
 
 
@@ -270,6 +277,9 @@ def submit_contact_form():
     except Exception as e:
         return jsonify({'error': 'Something went wrong on our end', 'details': e.errors()}), 500
 
+async def start_bot():
+    await bot.start(TOKEN)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=80)
+    asyncio.run(start_bot())
+    app.run(debug=os.getenv("DEBUG"), host='0.0.0.0', port=80)

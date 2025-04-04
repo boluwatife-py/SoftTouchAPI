@@ -1,13 +1,15 @@
-import discord
+import discord, os
 from discord.ext import commands
+from dotenv import load_dotenv
 
+load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True  # Enable message content intent
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Bot token (replace with your actual token from Discord Developer Portal)
-TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE"
+TOKEN = os.getenv("DISCORD_TOKEN")
 
 # Event: Bot is ready
 @bot.event

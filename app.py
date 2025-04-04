@@ -3,7 +3,7 @@ from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError, EmailStr
 import admin.admin as admin
-from utils.discord_bot import setup_discord_bot, send_error_to_discord
+from utils.discord_bot import setup_discord_bot, send_error_to_discord, send_contact_to_discord 
 from error_handler import configure_error_handlers
 from dotenv import load_dotenv
 import os, logging
@@ -262,7 +262,6 @@ def submit_contact_form():
         }
         
         # Send to Discord
-        from utils.discord_bot import send_contact_to_discord
         send_contact_to_discord(contact_data)
         return jsonify({'message': 'Form submitted successfully!'}) 
     

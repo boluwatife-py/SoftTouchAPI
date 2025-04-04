@@ -6,6 +6,10 @@ import discord
 from discord.ext import commands
 import asyncio
 import threading
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging - only show warnings and errors
 logger = logging.getLogger(__name__)
@@ -47,9 +51,9 @@ def setup_discord_bot():
     global discord_bot, client
     
     # Get Discord token from environment
-    discord_token = os.environ.get("DISCORD_TOKEN")
-    channel_id = os.environ.get("DISCORD_CHANNEL_ID")
-    inbox_channel_id = os.environ.get("DISCORD_INBOX_CHANNEL_ID")
+    discord_token = os.getenv("DISCORD_TOKEN")
+    channel_id = os.getenv("DISCORD_CHANNEL_ID")
+    inbox_channel_id = os.getenv("DISCORD_INBOX_CHANNEL_ID")
     
     if not discord_token:
         logger.warning("DISCORD_TOKEN not found in environment variables. Discord bot will not be started.")

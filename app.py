@@ -8,6 +8,8 @@ from error_handler import configure_error_handlers
 from dotenv import load_dotenv
 import os, logging
 
+load_dotenv()
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -20,7 +22,7 @@ CORS(app)
 # Initialize Discord bot
 discord_bot = setup_discord_bot()
 
-discord_token = os.environ.get("DISCORD_TOKEN")
+discord_token = os.getenv("DISCORD_TOKEN")
 # Make discord token available to templates
 app.config['DISCORD_TOKEN'] = discord_token
 
@@ -292,4 +294,4 @@ def submit_contact_form():
 
 
 if __name__ == '__main__':
-    app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=80)
+    app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=5000)

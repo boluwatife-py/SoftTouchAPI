@@ -111,7 +111,7 @@ def setup_discord_bot():
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
                     title="📢 Error Monitoring Bot Connected",
-                    description="The Flask application error monitor is now online and ready to report errors.",
+                    description="SoftTouch error monitor is now online and ready to report errors.",
                     color=0x2ecc71  # Green color
                 )
                 test_embed.add_field(
@@ -144,14 +144,9 @@ def setup_discord_bot():
                 
                 # Test send a message to verify permissions
                 test_embed = discord.Embed(
-                    title="📬 Contact Form Bot Connected",
-                    description="The Flask application contact form system is now online and ready to receive submissions.",
+                    title="📬 Contact Bot Connected",
+                    description="SoftTouch contact form system is now online and ready to receive submissions.",
                     color=0x3498db  # Nice blue color
-                )
-                test_embed.add_field(
-                    name="Channel Configuration", 
-                    value="✅ This channel is now configured to receive contact form submissions.", 
-                    inline=False
                 )
                 test_embed.set_footer(text=f"Inbox Channel • Initialized at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 test_embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
@@ -169,7 +164,7 @@ def setup_discord_bot():
                             break
                 
                 if not inbox_channel:
-                    logger.warning("No channel named 'inbox' found. Contact form submissions will not be reported. Please set DISCORD_INBOX_CHANNEL_ID.")
+                    logger.warning("No channel named 'inbox' found. SoftTouch form submissions will not be reported. Please set DISCORD_INBOX_CHANNEL_ID.")
         except Exception as e:
             logger.error(f"Failed to find inbox channel: {str(e)}\n{traceback.format_exc()}")
         
@@ -327,7 +322,7 @@ def create_contact_embed(contact_data):
     """Create a Discord embed for contact form submission"""
     # Create a more visually appealing embed with rich formatting
     embed = discord.Embed(
-        title=f"📬 New Contact Form Submission",
+        title=f"📬 New Form",
         description=f"**{contact_data['subject']}**\n\n{contact_data['message']}",
         color=0x2ecc71,  # Using a vibrant green color
         timestamp=datetime.now()

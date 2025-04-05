@@ -1,3 +1,4 @@
 env/
+.env
 
-.envwhisper_model/
+whisper_model/

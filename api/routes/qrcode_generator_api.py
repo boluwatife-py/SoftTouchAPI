@@ -12,6 +12,7 @@ import re
 import json
 import base64
 import logging
+import time
 from typing import Optional, Tuple
 
 # Configure logging
@@ -90,9 +91,17 @@ def calculate_box_size(qr: qrcode.QRCode, resolution: int) -> int:
     box_size = max(1, resolution // module_count)  # Ensure at least 1 pixel per module
     return box_size
 
+def clean_svg_code(svg: str) -> str:
+    """Clean SVG code to ensure it’s valid for HTML use."""
+    # Remove unnecessary whitespace and ensure proper encoding
+    svg = re.sub(r'\s+', ' ', svg).strip()
+    # Remove any escaped backslashes or invalid characters
+    svg = svg.replace('\\n', '').replace('\\t', '').replace('\\"', '"')
+    return svg
+
 def generate_qr_image(data: str, output_format: str, style: str, fill_color: str, back_color: str, 
                     resolution: int, border: int, image_file: Optional[object] = None) -> Tuple[object, str, Optional[Image.Image]]:
-    """Generate QR code with specified resolution, returning buffer or SVG code."""
+    """Generate QR code with specified resolution, returning buffer or cleaned SVG code."""
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
@@ -111,9 +120,10 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
         qr_img.save(output)
         svg_code = output.getvalue().decode('utf-8')
         output.close()
+        cleaned_svg = clean_svg_code(svg_code)
         mime_type = 'image/svg+xml'
         img_obj = None
-        return svg_code, mime_type, img_obj
+        return cleaned_svg, mime_type, img_obj
     else:
         module_drawer = VALID_STYLES[style]()
         qr_img = qr.make_image(
@@ -147,9 +157,9 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
         return output, mime_type, img_obj
 
 @qr_api.route('/generate', methods=['POST'])
-def download_qr():
+def generate_qr():
     """
-    Generate and return a stylized QR code with specified resolution, either as a file download or JSON.
+    Generate and return a stylized QR code with specified resolution, either as a file or JSON.
     Request body (multipart/form-data or JSON):
     - data: text or URL to encode (required)
     - format: output format (optional, default: 'png'; options: 'png', 'jpg', 'svg')
@@ -173,7 +183,7 @@ def download_qr():
         style = request.form.get('style', 'square')
         fill_color = request.form.get('fill_color', '#000000')
         back_color = request.form.get('back_color', '#FFFFFF')
-        resolution = request.form.get('resolution', '600')  # New default
+        resolution = request.form.get('resolution', '600')
         border = request.form.get('border', '4')
         image_file = request.files.get('image')
     elif request.content_type and 'application/json' in request.content_type:
@@ -195,7 +205,7 @@ def download_qr():
         style = json_data.get('style', 'square')
         fill_color = json_data.get('fill_color', '#000000')
         back_color = json_data.get('back_color', '#FFFFFF')
-        resolution = json_data.get('resolution', '600')  # New default
+        resolution = json_data.get('resolution', '600')
         border = json_data.get('border', '4')
         image_file = None
     else:
@@ -250,7 +260,7 @@ def download_qr():
     accept_header = request.headers.get('Accept', '*/*')
     if mime_type in accept_header or '*/*' in accept_header or 'application/octet-stream' in accept_header:
         if output_format == 'svg':
-            logger.info(f"QR code downloaded as SVG: style: {style}")
+            logger.info(f"QR code generated as SVG file: style: {style}")
             return Response(
                 output,
                 mimetype='image/svg+xml',
@@ -258,7 +268,7 @@ def download_qr():
             )
         else:
             filename = f"qr_code.{output_format}"
-            logger.info(f"QR code downloaded as file: {output_format}, style: {style}, size: {round(len(output.getvalue()) / 1024, 2)}KB")
+            logger.info(f"QR code generated as file: {output_format}, style: {style}, size: {round(len(output.getvalue()) / 1024, 2)}KB")
             return send_file(
                 output,
                 mimetype=mime_type,

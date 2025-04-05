@@ -245,17 +245,10 @@ def home_endpoints():
 def statistics_endpoints():
     return jsonify(statistics)
 
-@app.route('/error', methods=['GET'])
-def trigger_error():
-    """Route to deliberately trigger an error"""
-    # Deliberately raising an exception to test error reporting
-    raise ValueError("This is a test error triggered manually")
-
 @app.route('/endpoints', methods=['GET'])
 def get_endpoints():
     return jsonify(api_endpoints), 200
 
-# CONTACT FORM
 class ContactForm(BaseModel):
     name: str
     email: EmailStr
@@ -273,17 +266,14 @@ def submit_contact_form():
             'message': data.message,
         }
         
-        # Send to Discord
         send_contact_to_discord(contact_data)
-        return jsonify({'message': 'Form submitted successfully!'}) 
+        return jsonify({'message': 'Form submitted successfully!'})
     
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
-    except Exception as e:
-        return jsonify({'error': 'Something went wrong on our end', 'details': str(e)}), 500
 
 
 
 setup_discord_bot()
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)

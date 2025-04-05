@@ -284,6 +284,6 @@ def submit_contact_form():
 
 
 
+setup_discord_bot()
 if __name__ == '__main__':
-    setup_discord_bot()
-    app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

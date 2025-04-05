@@ -185,7 +185,7 @@ api_endpoints = [
     {
         "name": "Audio Transcription",
         "method": "POST",
-        "endpoint": API_URL + "/text/transcribe",
+        "endpoint": API_URL + "/api/text/transcribe",
         "response_type": "text/plain",
         "sample_response": "Hello, this is a test audio file for transcription.",
         "part_description": "Transcribes audio files to text using OpenAI Whisper, returning the transcription as plain text.",

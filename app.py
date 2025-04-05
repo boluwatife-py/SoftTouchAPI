@@ -155,7 +155,7 @@ api_endpoints = [
     {
     "name": "QR Code Generator",
     "method": "POST",
-    "endpoint": API_URL + "/api/qr/download",
+    "endpoint": API_URL + "/api/qr/generate",
     "response_type": "File or JSON",
     "sample_response": {
         "file": "QR code file (e.g., qr_code.png or qr_code.svg) if Accept header matches mime_type",

@@ -6,6 +6,7 @@ import time
 
 translate_api = Blueprint('translate_api', __name__)
 
+# Initialize translator
 translator = Translator()
 
 # Constants
@@ -44,7 +45,7 @@ def translate_text():
             'error': 'Bad Request',
             'message': 'Request body must be a valid JSON object',
             'status': 400,
-            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+            'timestamp': time.strftime('%Y-%m-%d %H:% Благодарю вас:%S UTC', time.gmtime())
         }), 400
 
     text = data.get('text')
@@ -99,6 +100,7 @@ def translate_text():
         sanitized_text = text_result
 
         src_to_use = src
+        detected = None
         if src != 'auto':
             is_valid_src, src_or_error = validate_language(src)
             if not is_valid_src:
@@ -113,34 +115,29 @@ def translate_text():
             src_to_use = detected.lang if detected.confidence > 0.9 else 'auto'
 
         translated = translator.translate(sanitized_text, src=src_to_use, dest=dest)
-        results.append({
+        result = {
             'input_text': sanitized_text,
             'translated_text': translated.text,
             'source_language': src_to_use,
+            'source_language_name': LANGUAGES.get(src_to_use, 'Unknown') if src_to_use != 'auto' else 'Auto-detected',
             'target_language': dest,
-            'confidence': round(detected.confidence, 3) if src == 'auto' else None,
-            'character_count': len(sanitized_text)
-        })
+            'target_language_name': LANGUAGES.get(dest, 'Unknown'),
+            'confidence': round(detected.confidence, 3) if detected and src == 'auto' else None,
+            'character_count': len(sanitized_text),
+            'total_processing_time': None
+        }
+        results.append(result)
 
     processing_time = time.time() - start_time
-    response = results[0] if isinstance(text, str) else results
-    if isinstance(response, list):
-        for item in response:
-            item['total_processing_time'] = round(processing_time, 3)
+    if len(results) == 1:
+        results[0]['total_processing_time'] = round(processing_time, 3)
+        response = results[0]
     else:
-        response['total_processing_time'] = round(processing_time, 3)
+        for result in results:
+            result['total_processing_time'] = round(processing_time, 3)
+        response = results
 
-    return jsonify({
-        'success': True,
-        'results': response,
-        'status': 200,
-        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
-        'request_summary': {
-            'endpoint': request.path,
-            'method': request.method,
-            'batch_size': len(texts)
-        }
-    }), 200
+    return jsonify(response), 200
 
 @translate_api.route('/translate/detect', methods=['POST'])
 def detect_language():
@@ -178,17 +175,10 @@ def detect_language():
     processing_time = time.time() - start_time
 
     return jsonify({
-        'success': True,
         'input_text': sanitized_text,
         'language': detected.lang,
         'language_name': LANGUAGES.get(detected.lang, 'Unknown'),
         'confidence': round(detected.confidence, 3),
         'character_count': len(sanitized_text),
-        'total_processing_time': round(processing_time, 3),
-        'status': 200,
-        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()),
-        'request_summary': {
-            'endpoint': request.path,
-            'method': request.method
-        }
+        'total_processing_time': round(processing_time, 3)
     }), 200

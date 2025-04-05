@@ -8,19 +8,17 @@ from typing import Optional
 
 transcribe_api = Blueprint('transcribe_api', __name__)
 
-# Define model path
-MODEL_PATH = "whisper_model/small"
+# Define model path (optional custom cache directory)
+MODEL_NAME = "small"
+MODEL_CACHE_DIR = "whisper_model"  # Custom directory to store the model
 
 # Load Whisper model with error handling
 try:
-    if not os.path.exists(MODEL_PATH):
-        print("Downloading Whisper model...")
-        model = whisper.load_model("small")
-        os.makedirs("whisper_model", exist_ok=True)
-        model.save_pretrained(MODEL_PATH)
-    else:
-        print("Loading Whisper model from local storage...")
-        model = whisper.load_model(MODEL_PATH)
+    # Ensure the cache directory exists
+    os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
+    print(f"Loading Whisper '{MODEL_NAME}' model (will download if not cached)...")
+    # Load model, specifying a custom cache directory
+    model = whisper.load_model(MODEL_NAME, download_root=MODEL_CACHE_DIR)
 except Exception as e:
     raise RuntimeError(f"Failed to load Whisper model: {str(e)}")
 

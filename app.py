@@ -243,6 +243,7 @@ app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
+app.register_blueprint(api.transcribe_api, url_prefix='/api/text')
 
 
 

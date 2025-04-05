@@ -153,35 +153,69 @@ api_endpoints = [
     },
     # QR CODE GENERATOR
     {
-        "name": "QR Code Generator",
-        "method": "POST",
-        "endpoint": API_URL + "/api/qr/generate",
-        "response_type": "File",
-        "sample_response": {
-            "file": "QR code in specified format (PNG, JPG, or SVG)"
-        },
-        "part_description": "Generates a QR code with customizable options.",
-        "description": "Generates a QR code with customizable options.",
-        "params": [
-            {"name": "data", "type": "String", "description": "Text or URL to encode (required)"},
-            {"name": "format", "type": "String (Optional, default='png')", "description": "Output format: 'png', 'jpg', or 'svg'"},
-            {"name": "fill_color", "type": "String (Optional, default='#000000')", "description": "QR code color in hex format (e.g., '#FF0000')"},
-            {"name": "back_color", "type": "String (Optional, default='#FFFFFF')", "description": "Background color in hex format"},
-            {"name": "box_size", "type": "Integer (Optional, default=10)", "description": "Size of each QR box (1-50)"},
-            {"name": "border", "type": "Integer (Optional, default=4)", "description": "Border size in boxes (0-20)"},
-            {"name": "image", "type": "File (Optional, multipart/form-data only)", "description": "Optional image file (e.g., logo) to embed (not supported for SVG)"}
-        ],
-        "sample_request": {
-            "data": "https://softtouch.io/free-apis",
+    "name": "QR Code Generator",
+    "method": "POST",
+    "endpoint": API_URL + "/api/qr/download",
+    "response_type": "File or JSON",
+    "sample_response": {
+        "file": "QR code file (e.g., qr_code.png or qr_code.svg) if Accept header matches mime_type",
+        "json_png_jpg": {
             "format": "png",
-            "fill_color": "#000000",
-            "back_color": "#FFFFFF",
-            "box_size": "10",
-            "border": "4",
-            "image": ""
+            "style": "rounded_border",
+            "mime_type": "image/png",
+            "data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg... (truncated base64 string)",
+            "size_kb": 5.12,
+            "dimensions": {
+                "width": 600,
+                "height": 600
+            },
+            "colors": {
+                "fill": "#000000",
+                "background": "#FFFFFF"
+            },
+            "resolution": 600,
+            "border": 4,
+            "timestamp": "2025-04-05 12:34:56 UTC"
+        },
+        "json_svg": {
+            "format": "svg",
+            "style": "square",
+            "mime_type": "image/svg+xml",
+            "svg_code": "<svg xmlns=\"http://www.w3.org/2000/svg\" ... (truncated SVG string)",
+            "size_kb": 1.23,
+            "colors": {
+                "fill": "#000000",
+                "background": "#FFFFFF"
+            },
+            "resolution": 600,
+            "border": 4,
+            "timestamp": "2025-04-05 12:34:56 UTC"
         }
     },
-    # AUDIO TRANSCRIPTION
+    "part_description": "Generates a stylized QR code with customizable options.",
+    "description": "Generates a stylized QR code with specified resolution (default ~600x600 pixels). Returns a file download if the 'Accept' header matches the output mime_type (e.g., 'image/png' or 'image/svg+xml'), otherwise returns JSON with base64 data (PNG/JPG) or SVG code (SVG). 'rounded_border' style applies rounded corners to the entire image (PNG/JPG only).",
+    "params": [
+        {"name": "data", "type": "String", "description": "Text or URL to encode (required)"},
+        {"name": "format", "type": "String (Optional, default='png')", "description": "Output format: 'png', 'jpg', or 'svg'"},
+        {"name": "style", "type": "String (Optional, default='square')", "description": "QR module style: 'square', 'circle', 'rounded', 'gapped_square', 'vertical_bars', 'horizontal_bars', 'rounded_border' (rounded corners for PNG/JPG only)"},
+        {"name": "fill_color", "type": "String (Optional, default='#000000')", "description": "QR code color in hex format (e.g., '#FF0000')"},
+        {"name": "back_color", "type": "String (Optional, default='#FFFFFF')", "description": "Background color in hex format"},
+        {"name": "resolution", "type": "Integer (Optional, default=600)", "description": "Desired width/height in pixels (100-2000)"},
+        {"name": "border", "type": "Integer (Optional, default=4)", "description": "Border size in boxes (0-20)"},
+        {"name": "image", "type": "File (Optional, multipart/form-data only)", "description": "Optional image file (e.g., logo) to embed (not supported for SVG, max 5MB)"}
+    ],
+    "sample_request": {
+        "data": "https://softtouch.io/free-apis",
+        "format": "svg",
+        "style": "square",
+        "fill_color": "#000000",
+        "back_color": "#FFFFFF",
+        "resolution": "600",
+        "border": "4",
+        "image": ""
+    }
+    },
+        # AUDIO TRANSCRIPTION
     {
         "name": "Audio Transcription",
         "method": "POST",

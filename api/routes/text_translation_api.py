@@ -1,8 +1,7 @@
 from flask import Blueprint, request, jsonify
 from googletrans import Translator, LANGUAGES
 import re
-from typing import Union, List, Dict, Tuple, Optional
-import traceback
+from typing import Tuple, Optional
 import time
 
 translate_api = Blueprint('translate_api', __name__)
@@ -48,13 +47,6 @@ def validate_language(lang: str) -> Tuple[bool, str]:
         return True, lang
     except Exception as e:
         return False, f"Language validation error: {str(e)}"
-
-def handle_exception(e):
-    """Generate JSON error response from exception."""
-    return jsonify({
-        'error': str(e),
-        'traceback': traceback.format_exc() if isinstance(e, Exception) else None
-    }), 500
 
 @translate_api.route('/translate', methods=['POST'])
 def translate_text():
@@ -152,8 +144,9 @@ def translate_text():
 
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
+    
     except Exception as e:
-        return handle_exception(e)
+        raise
 
 @translate_api.route('/translate/detect', methods=['POST'])
 def detect_language():
@@ -203,7 +196,7 @@ def detect_language():
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
-        return handle_exception(e)
+        raise
 
 @translate_api.route('/translate/info', methods=['GET'])
 def translate_info():
@@ -228,7 +221,7 @@ def translate_info():
             }
         }), 200
     except Exception as e:
-        return handle_exception(e)
+        raise
 
 @translate_api.route('/translate/detect/info', methods=['GET'])
 def detect_info():
@@ -253,4 +246,4 @@ def detect_info():
             'available language': LANGUAGES.keys()
         }), 200
     except Exception as e:
-        return handle_exception(e)
+        raise

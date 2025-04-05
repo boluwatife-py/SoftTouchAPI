@@ -19,8 +19,21 @@ CORS(app)
 
 # Initialize Discord bot
 discord_bot = setup_discord_bot()
-# Configure error handlers
-configure_error_handlers(app, send_error_to_discord)
+
+discord_token = os.environ.get("DISCORD_TOKEN")
+# Make discord token available to templates
+app.config['DISCORD_TOKEN'] = discord_token
+
+if discord_token:
+    logger.info("Discord token found, initializing Discord bot")
+    discord_bot = setup_discord_bot()
+    # Configure error handlers with Discord integration
+    configure_error_handlers(app, send_error_to_discord)
+else:
+    logger.warning("Discord token not found, Discord integration disabled")
+    discord_bot = None
+    # Configure error handlers without Discord integration
+    configure_error_handlers(app, None)
 
 load_dotenv()
 API_URL = os.getenv('API_URL')

@@ -19,22 +19,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Initialize Discord bot
-discord_bot = setup_discord_bot()
-
 discord_token = os.getenv("DISCORD_TOKEN")
-# Make discord token available to templates
 app.config['DISCORD_TOKEN'] = discord_token
 
 if discord_token:
-    logger.info("Discord token found, initializing Discord bot")
-    discord_bot = setup_discord_bot()
-    # Configure error handlers with Discord integration
     configure_error_handlers(app, send_error_to_discord)
 else:
-    logger.warning("Discord token not found, Discord integration disabled")
-    discord_bot = None
-    # Configure error handlers without Discord integration
     configure_error_handlers(app, None)
 
 load_dotenv()
@@ -295,4 +285,5 @@ def submit_contact_form():
 
 
 if __name__ == '__main__':
+    setup_discord_bot()
     app.run(debug=os.getenv("DEBUG", False), host='0.0.0.0', port=5000)

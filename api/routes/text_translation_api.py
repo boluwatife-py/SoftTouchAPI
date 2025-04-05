@@ -105,7 +105,7 @@ def translate_text():
             detected = translator.detect(sanitized_text)  # Global handler catches failures
             src_to_use = detected.lang if detected.confidence > 0.9 else 'auto'
 
-
+        # Perform translation
         translated = translator.translate(sanitized_text, src=src_to_use, dest=dest)  # Global handler catches failures
         results.append({
             'translated_text': translated.text,
@@ -133,7 +133,7 @@ def detect_language():
     Request body (JSON):
     - text: string (required)
     Returns:
-    - {language, confidence, processing_time}
+    - {language, confidence, total_processing_time}
     """
     data = request.get_json(silent=True)
     if not data:
@@ -159,19 +159,21 @@ def detect_language():
     sanitized_text = text_result
 
     start_time = time.time()
-    detected = translator.detect(sanitized_text)
+    detected = translator.detect(sanitized_text)  # Global handler catches failures
     processing_time = time.time() - start_time
+
     return jsonify({
         'success': True,
         'language': detected.lang,
         'confidence': round(detected.confidence, 3),
-        'processing_time': round(processing_time, 3)
+        'total_processing_time': round(processing_time, 3)  # Added processing time here
     }), 200
 
 @translate_api.route('/translate/info', methods=['GET'])
 def translate_info():
     """Return /translate endpoint info."""
-    return jsonify({
+    start_time = time.time()
+    response = {
         'endpoint': '/api/translate/translate',
         'method': 'POST',
         'description': 'Translate text to a target language',
@@ -182,18 +184,22 @@ def translate_info():
         },
         'returns': {
             'success': 'boolean',
-            'results': 'object or array with {translated_text, src, dest, processing_time, total_processing_time}'
+            'results': 'object or array with {translated_text, src, dest, total_processing_time}'
         },
         'limits': {
             'max_batch_size': MAX_BATCH_SIZE,
             'max_text_length': MAX_TEXT_LENGTH
         }
-    }), 200
+    }
+    processing_time = time.time() - start_time
+    response['total_processing_time'] = round(processing_time, 3)  # Optional: added for consistency
+    return jsonify(response), 200
 
 @translate_api.route('/translate/detect/info', methods=['GET'])
 def detect_info():
     """Return /translate/detect endpoint info."""
-    return jsonify({
+    start_time = time.time()
+    response = {
         'endpoint': '/api/translate/translate/detect',
         'method': 'POST',
         'description': 'Detect the language of input text',
@@ -204,10 +210,13 @@ def detect_info():
             'success': 'boolean',
             'language': 'detected language code (ISO 639-1)',
             'confidence': 'float (0 to 1)',
-            'processing_time': 'float (seconds)'
+            'total_processing_time': 'float (seconds)'
         },
         'limits': {
             'max_text_length': MAX_TEXT_LENGTH
         },
-        'available language': LANGUAGES.keys()
-    }), 200
+        'available_languages': list(LANGUAGES.keys())  # Converted to list for JSON serialization
+    }
+    processing_time = time.time() - start_time
+    response['total_processing_time'] = round(processing_time, 3)  # Optional: added for consistency
+    return jsonify(response), 200

@@ -16,8 +16,6 @@ MODEL_CACHE_DIR = "whisper_model"  # Custom directory to store the model
 try:
     # Ensure the cache directory exists
     os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-    print(f"Loading Whisper '{MODEL_NAME}' model (will download if not cached)...")
-    # Load model, specifying a custom cache directory
     model = whisper.load_model(MODEL_NAME, download_root=MODEL_CACHE_DIR)
 except Exception as e:
     raise RuntimeError(f"Failed to load Whisper model: {str(e)}")

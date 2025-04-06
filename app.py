@@ -308,6 +308,6 @@ def submit_contact_form():
 
 
 
-setup_discord_bot()
+# setup_discord_bot()
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

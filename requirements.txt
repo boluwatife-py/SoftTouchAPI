@@ -89,6 +89,7 @@ PyNaCl==1.5.0
 pyphen==0.17.2
 python-dotenv==1.1.0
 pytz==2025.2
+pyvips==2.2.3
 qrcode==8.0
 regex==2024.11.6
 requests==2.32.3
@@ -104,6 +105,7 @@ spacy==3.8.4
 spacy-legacy==3.0.12
 spacy-loggers==1.0.5
 srsly==2.5.1
+svgwrite==1.4.3
 sympy==1.13.1
 textstat==0.7.5
 thinc==8.3.4

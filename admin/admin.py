@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Flask
+from flask_cors import CORS
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import create_engine, Column, String, Boolean, Integer, Float, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
@@ -7,13 +8,36 @@ from typing import List, Optional
 import datetime
 import uuid
 import json
+import jwt
+import bcrypt
+from dotenv import load_dotenv
+import os
+import logging
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Database setup
-engine = create_engine('sqlite:///api_management.db', echo=True)
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///api_management.db')
+engine = create_engine(DATABASE_URL, echo=False)  # Set echo=False in production
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
 
+# JWT Secret
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY must be set in .env file")
+
 # Database Models
+class UserDB(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String, nullable=False, unique=True)
+    password_hash = Column(String, nullable=False)  # Hashed with bcrypt
+    is_admin = Column(Boolean, default=False)
+
 class ApiEndpointDB(Base):
     __tablename__ = 'api_endpoints'
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -25,7 +49,7 @@ class ApiEndpointDB(Base):
     description = Column(Text, nullable=False)
     params = Column(Text, nullable=False)  # JSON string of params
     enabled = Column(Boolean, default=True)
-    is_visible_in_stats = Column(Boolean, default=True)  # New field for stats visibility
+    is_visible_in_stats = Column(Boolean, default=True)
 
 class ApiStatsDB(Base):
     __tablename__ = 'api_stats'
@@ -67,7 +91,7 @@ class ApiEndpoint(BaseModel):
     description: str
     params: List[ApiParam]
     enabled: bool = True
-    is_visible_in_stats: bool = True  # Added to Pydantic model
+    is_visible_in_stats: bool = True
 
 class ApiStats(BaseModel):
     name: str
@@ -84,12 +108,28 @@ class Statistics(BaseModel):
     timestamp: str
     apis: List[ApiStats]
 
+class LoginData(BaseModel):
+    username: str
+    password: str
+
 # Authentication middleware
 def check_admin_auth():
     auth_header = request.headers.get('Authorization')
-    if not auth_header or auth_header != 'Bearer admin-token':
+    if not auth_header or not auth_header.startswith('Bearer '):
+        logger.warning("No Authorization header provided")
         return jsonify({"error": "Unauthorized"}), 401
-    return None
+    
+    token = auth_header.split(' ')[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        request.user_id = payload['user_id']  # Attach user_id to request for later use
+        return None
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
+        return jsonify({"error": "Token expired"}), 401
+    except jwt.InvalidTokenError:
+        logger.warning("Invalid token")
+        return jsonify({"error": "Invalid token"}), 401
 
 @admin_bp.before_request
 def require_admin():
@@ -103,17 +143,79 @@ def check_route_enabled(endpoint: str):
     try:
         api_endpoint = session.query(ApiEndpointDB).filter_by(endpoint=endpoint).first()
         if api_endpoint and not api_endpoint.enabled:
+            logger.info(f"Disabled endpoint accessed: {endpoint}")
             return jsonify({"error": "Endpoint not found"}), 404
         return None
     finally:
         session.close()
 
-# API CRUD Operations
+# User API Endpoints
+@admin_bp.route('/user', methods=['GET'])
+def get_current_user():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return jsonify(None), 401  # Matches frontend expectation
+    
+    token = auth_header.split(' ')[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+        session = Session()
+        try:
+            user = session.query(UserDB).filter_by(id=payload['user_id']).first()
+            if user:
+                logger.info(f"User retrieved: {user.username}")
+                return jsonify({"id": user.id, "username": user.username})
+            return jsonify(None), 401
+        finally:
+            session.close()
+    except jwt.InvalidTokenError:
+        return jsonify(None), 401
+
+@admin_bp.route('/login', methods=['POST'])
+def login():
+    try:
+        data = LoginData(**request.get_json())
+        session = Session()
+        try:
+            user = session.query(UserDB).filter_by(username=data.username).first()
+            if not user:
+                logger.warning(f"Login failed: Invalid username {data.username}")
+                return jsonify({"error": "Invalid username"}), 401
+            
+            if not bcrypt.checkpw(data.password.encode('utf-8'), user.password_hash.encode('utf-8')):
+                logger.warning(f"Login failed: Invalid password for {data.username}")
+                return jsonify({"error": "Invalid password"}), 401
+            
+            # Generate JWT token
+            token = jwt.encode({
+                'user_id': user.id,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)  # Token expires in 24 hours
+            }, SECRET_KEY, algorithm='HS256')
+            
+            logger.info(f"User logged in: {user.username}")
+            response = jsonify({"id": user.id, "username": user.username})
+            response.headers['Authorization'] = f'Bearer {token}'
+            return response
+        finally:
+            session.close()
+    except ValidationError as e:
+        logger.error(f"Login validation failed: {e.errors()}")
+        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
+
+@admin_bp.route('/logout', methods=['POST'])
+def logout():
+    # Since JWT is stateless, logout is handled client-side by discarding the token
+    # This endpoint is here to match the frontend expectation
+    logger.info("User logged out (client-side token discard)")
+    return jsonify({"message": "Logged out successfully"})
+
+# API CRUD Operations (unchanged but with logging)
 @admin_bp.route('/endpoints', methods=['GET'])
 def get_endpoints():
     session = Session()
     try:
         endpoints = session.query(ApiEndpointDB).all()
+        logger.info(f"Retrieved {len(endpoints)} endpoints")
         return jsonify({
             "endpoints": [{
                 **e.__dict__,
@@ -133,10 +235,12 @@ def get_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
         if endpoint:
+            logger.info(f"Retrieved endpoint: {endpoint_id}")
             return jsonify({
                 **endpoint.__dict__,
                 "params": json.loads(endpoint.params)
             })
+        logger.warning(f"Endpoint not found: {endpoint_id}")
         return jsonify({"error": "Endpoint not found"}), 404
     finally:
         session.close()
@@ -161,6 +265,7 @@ def create_endpoint():
             )
             session.add(new_endpoint)
             session.commit()
+            logger.info(f"Created endpoint: {data.name}")
             return jsonify({
                 "message": "Endpoint created successfully",
                 "endpoint": data.dict()
@@ -168,6 +273,7 @@ def create_endpoint():
         finally:
             session.close()
     except ValidationError as e:
+        logger.error(f"Endpoint creation failed: {e.errors()}")
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
 
 @admin_bp.route('/endpoints/<endpoint_id>', methods=['PUT'])
@@ -178,6 +284,7 @@ def update_endpoint(endpoint_id: str):
         try:
             endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
             if not endpoint:
+                logger.warning(f"Endpoint not found for update: {endpoint_id}")
                 return jsonify({"error": "Endpoint not found"}), 404
             
             endpoint.name = data.name
@@ -190,6 +297,7 @@ def update_endpoint(endpoint_id: str):
             endpoint.enabled = data.enabled
             endpoint.is_visible_in_stats = data.is_visible_in_stats
             session.commit()
+            logger.info(f"Updated endpoint: {endpoint_id}")
             return jsonify({
                 "message": "Endpoint updated successfully",
                 "endpoint": data.dict()
@@ -197,6 +305,7 @@ def update_endpoint(endpoint_id: str):
         finally:
             session.close()
     except ValidationError as e:
+        logger.error(f"Endpoint update failed: {e.errors()}")
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
 
 @admin_bp.route('/endpoints/<endpoint_id>', methods=['DELETE'])
@@ -207,7 +316,9 @@ def delete_endpoint(endpoint_id: str):
         if endpoint:
             session.delete(endpoint)
             session.commit()
+            logger.info(f"Deleted endpoint: {endpoint_id}")
             return jsonify({"message": "Endpoint deleted successfully"})
+        logger.warning(f"Endpoint not found for deletion: {endpoint_id}")
         return jsonify({"error": "Endpoint not found"}), 404
     finally:
         session.close()
@@ -219,6 +330,7 @@ def enable_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
         if not endpoint:
+            logger.warning(f"Endpoint not found to enable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         
         if endpoint.enabled:
@@ -226,6 +338,7 @@ def enable_endpoint(endpoint_id: str):
         
         endpoint.enabled = True
         session.commit()
+        logger.info(f"Enabled endpoint: {endpoint_id}")
         return jsonify({
             "message": "Endpoint enabled successfully",
             "endpoint": {**endpoint.__dict__, "params": json.loads(endpoint.params)}
@@ -239,6 +352,7 @@ def disable_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
         if not endpoint:
+            logger.warning(f"Endpoint not found to disable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         
         if not endpoint.enabled:
@@ -246,6 +360,7 @@ def disable_endpoint(endpoint_id: str):
         
         endpoint.enabled = False
         session.commit()
+        logger.info(f"Disabled endpoint: {endpoint_id}")
         return jsonify({
             "message": "Endpoint disabled successfully",
             "endpoint": {**endpoint.__dict__, "params": json.loads(endpoint.params)}
@@ -260,6 +375,7 @@ def show_in_stats(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
         if not endpoint:
+            logger.warning(f"Endpoint not found to show in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         
         if endpoint.is_visible_in_stats:
@@ -267,6 +383,7 @@ def show_in_stats(endpoint_id: str):
         
         endpoint.is_visible_in_stats = True
         session.commit()
+        logger.info(f"Set endpoint visible in stats: {endpoint_id}")
         return jsonify({
             "message": "Endpoint set to visible in stats",
             "endpoint": {**endpoint.__dict__, "params": json.loads(endpoint.params)}
@@ -280,6 +397,7 @@ def hide_in_stats(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
         if not endpoint:
+            logger.warning(f"Endpoint not found to hide in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         
         if not endpoint.is_visible_in_stats:
@@ -287,6 +405,7 @@ def hide_in_stats(endpoint_id: str):
         
         endpoint.is_visible_in_stats = False
         session.commit()
+        logger.info(f"Hid endpoint from stats: {endpoint_id}")
         return jsonify({
             "message": "Endpoint hidden from stats",
             "endpoint": {**endpoint.__dict__, "params": json.loads(endpoint.params)}
@@ -294,13 +413,12 @@ def hide_in_stats(endpoint_id: str):
     finally:
         session.close()
 
-# Statistics Routes (Read-only for admin)
+# Statistics Routes
 @admin_bp.route('/stats', methods=['GET'])
 def get_statistics():
     session = Session()
     try:
         stats = session.query(StatisticsDB).first()
-        # Only show stats for endpoints that are visible
         visible_endpoints = session.query(ApiEndpointDB).filter_by(is_visible_in_stats=True).all()
         visible_names = {e.name for e in visible_endpoints}
         apis = session.query(ApiStatsDB).filter(ApiStatsDB.name.in_(visible_names)).all()
@@ -310,6 +428,7 @@ def get_statistics():
             session.add(stats)
             session.commit()
         
+        logger.info("Retrieved statistics")
         return jsonify({
             "totalRequests": stats.total_requests,
             "uniqueUsers": stats.unique_users,
@@ -323,13 +442,14 @@ def get_statistics():
 def get_api_stats(api_name: str):
     session = Session()
     try:
-        # Check if the endpoint is visible in stats
         endpoint = session.query(ApiEndpointDB).filter_by(name=api_name).first()
         if not endpoint or not endpoint.is_visible_in_stats:
+            logger.warning(f"API stats not found or not visible: {api_name}")
             return jsonify({"error": "API stats not found or not visible"}), 404
         
         api_stat = session.query(ApiStatsDB).filter_by(name=api_name).first()
         if api_stat:
+            logger.info(f"Retrieved stats for API: {api_name}")
             return jsonify({
                 "api": api_stat.__dict__,
                 "timestamp": datetime.datetime.utcnow().isoformat()
@@ -337,23 +457,3 @@ def get_api_stats(api_name: str):
         return jsonify({"error": "API stats not found"}), 404
     finally:
         session.close()
-
-# Example usage in main app
-"""
-from flask import Flask
-from admin import admin_bp, check_route_enabled
-
-app = Flask(__name__)
-app.register_blueprint(admin_bp)
-
-@app.route('/api/text/analyze', methods=['POST'])
-def text_analyze():
-    disabled_response = check_route_enabled('/api/text/analyze')
-    if disabled_response:
-        return disabled_response
-    # Your route logic here
-    return jsonify({"message": "Text analysis endpoint"})
-
-if __name__ == '__main__':
-    app.run(debug=True)
-"""

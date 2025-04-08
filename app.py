@@ -262,6 +262,9 @@ statistics = {
     ]
 }
 
+#REGISTER THE ADMIN BLUEPRINT
+app.register_blueprint(admin.admin_bp, url_prefix='/admin')
+
 # API ROUTING
 app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')

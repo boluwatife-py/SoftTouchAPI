@@ -113,83 +113,193 @@ class LoginData(BaseModel):
     password: str
 
 # Authentication middleware
+from flask import Blueprint, jsonify, request
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import create_engine, Column, String, Boolean, Integer, Float, DateTime, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from typing import List, Optional
+from datetime import datetime, timedelta
+import uuid
+import json
+import jwt
+import bcrypt
+from dotenv import load_dotenv
+import os
+import logging
+
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Database setup
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///api_management.db')
+engine = create_engine(DATABASE_URL, echo=False)
+Base = declarative_base()
+Session = sessionmaker(bind=engine)
+
+# JWT Secret
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY must be set in .env file")
+
+# Database Models
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    username = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)  # Hashed with bcrypt
+    is_admin = Column(Boolean, default=False)
+
+class ApiEndpoint(Base):
+    __tablename__ = 'api_endpoints'
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    method = Column(String, nullable=False)
+    endpoint = Column(String, nullable=False, unique=True)
+    response_type = Column(String, nullable=False)
+    part_description = Column(Text, nullable=False)
+    description = Column(Text, nullable=False)
+    params = Column(Text, nullable=False)  # JSON string of params
+    enabled = Column(Boolean, default=True)
+    is_visible_in_stats = Column(Boolean, default=True)
+
+class ApiStat(Base):
+    __tablename__ = 'api_stats'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    daily_requests = Column(Integer, default=0)
+    weekly_requests = Column(Integer, default=0)
+    monthly_requests = Column(Integer, default=0)
+    average_response_time = Column(Float, default=0.0)
+    success_rate = Column(Float, default=0.0)
+    popularity = Column(Float, default=0.0)
+
+class Statistic(Base):
+    __tablename__ = 'statistics'
+    id = Column(Integer, primary_key=True)
+    total_requests = Column(Integer, default=0)
+    unique_users = Column(Integer, default=0)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+# Create tables
+Base.metadata.create_all(engine)
+
+# Pydantic Models
+class ApiParam(BaseModel):
+    name: str
+    type: str
+    description: str
+
+class ApiEndpointSchema(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    method: str
+    endpoint: str
+    response_type: str
+    part_description: str
+    description: str
+    params: List[ApiParam]
+    enabled: bool = True
+    is_visible_in_stats: bool = True
+
+class InsertApiEndpoint(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    method: str
+    endpoint: str
+    response_type: str
+    part_description: str
+    description: str
+    params: List[ApiParam]
+    enabled: Optional[bool] = True
+    is_visible_in_stats: Optional[bool] = True
+
+class ApiStatSchema(BaseModel):
+    name: str
+    dailyRequests: int = Field(alias='daily_requests')
+    weeklyRequests: int = Field(alias='weekly_requests')
+    monthlyRequests: int = Field(alias='monthly_requests')
+    averageResponseTime: float = Field(alias='average_response_time')
+    successRate: float = Field(alias='success_rate')
+    popularity: float
+
+class StatisticsSchema(BaseModel):
+    totalRequests: int = Field(alias='total_requests')
+    uniqueUsers: int = Field(alias='unique_users')
+    timestamp: str
+    apis: List[ApiStatSchema]
+
+class InsertUser(BaseModel):
+    username: str
+    password: str
+
+# Create Blueprint
+admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+
+# Authentication middleware
 def check_admin_auth():
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         logger.warning("No Authorization header provided")
-        return jsonify({"error": "Unauthorized"}), 401
+        return jsonify({"message": "Unauthorized"}), 401
     
     token = auth_header.split(' ')[1]
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        request.user_id = payload['user_id']  # Attach user_id to request for later use
+        request.user_id = payload['user_id']
         return None
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
-        return jsonify({"error": "Token expired"}), 401
+        return jsonify({"message": "Token expired"}), 401
     except jwt.InvalidTokenError:
         logger.warning("Invalid token")
-        return jsonify({"error": "Invalid token"}), 401
+        return jsonify({"message": "Invalid token"}), 401
 
 @admin_bp.before_request
 def require_admin():
+    # Skip authentication for OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        return None  # Let the request proceed to be handled by CORS
     auth_response = check_admin_auth()
     if auth_response:
         return auth_response
 
-# Route checker for non-admin routes
-def check_route_enabled(endpoint: str):
+@admin_bp.route('/user', methods=['GET'])
+def get_current_user():
+    auth_response = check_admin_auth()
+    if auth_response:
+        return auth_response
     session = Session()
     try:
-        api_endpoint = session.query(ApiEndpointDB).filter_by(endpoint=endpoint).first()
-        if api_endpoint and not api_endpoint.enabled:
-            logger.info(f"Disabled endpoint accessed: {endpoint}")
-            return jsonify({"error": "Endpoint not found"}), 404
-        return None
+        user = session.query(User).filter_by(id=request.user_id).first()
+        if user:
+            logger.info(f"User retrieved: {user.username}")
+            return jsonify({"id": user.id, "username": user.username})
+        return jsonify({"message": "User not found"}), 404
     finally:
         session.close()
 
-# User API Endpoints
-@admin_bp.route('/user', methods=['GET'])
-def get_current_user():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify(None), 401  # Matches frontend expectation
-    
-    token = auth_header.split(' ')[1]
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        session = Session()
-        try:
-            user = session.query(UserDB).filter_by(id=payload['user_id']).first()
-            if user:
-                logger.info(f"User retrieved: {user.username}")
-                return jsonify({"id": user.id, "username": user.username})
-            return jsonify(None), 401
-        finally:
-            session.close()
-    except jwt.InvalidTokenError:
-        return jsonify(None), 401
-
-@admin_bp.route('/login', methods=['POST'])
+@admin_bp.route('/login', methods=['POST'])/
 def login():
     try:
-        data = LoginData(**request.get_json())
+        data = InsertUser(**request.get_json())
         session = Session()
         try:
-            user = session.query(UserDB).filter_by(username=data.username).first()
+            user = session.query(User).filter_by(username=data.username).first()
             if not user:
                 logger.warning(f"Login failed: Invalid username {data.username}")
-                return jsonify({"error": "Invalid username"}), 401
+                return jsonify({"message": "Incorrect username or password"}), 401
             
-            if not bcrypt.checkpw(data.password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            if not bcrypt.checkpw(data.password.encode('utf-8'), user.password.encode('utf-8')):
                 logger.warning(f"Login failed: Invalid password for {data.username}")
-                return jsonify({"error": "Invalid password"}), 401
+                return jsonify({"message": "Incorrect username or password"}), 401
             
-            # Generate JWT token
             token = jwt.encode({
                 'user_id': user.id,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)  # Token expires in 24 hours
+                'exp': datetime.utcnow() + timedelta(hours=24)
             }, SECRET_KEY, algorithm='HS256')
             
             logger.info(f"User logged in: {user.username}")
@@ -200,14 +310,13 @@ def login():
             session.close()
     except ValidationError as e:
         logger.error(f"Login validation failed: {e.errors()}")
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
+        return jsonify({"message": "Validation failed", "details": e.errors()}), 400
 
 @admin_bp.route('/logout', methods=['POST'])
 def logout():
-    # Since JWT is stateless, logout is handled client-side by discarding the token
-    # This endpoint is here to match the frontend expectation
     logger.info("User logged out (client-side token discard)")
-    return jsonify({"message": "Logged out successfully"})
+    return '', 204
+
 
 # API CRUD Operations (unchanged but with logging)
 @admin_bp.route('/endpoints', methods=['GET'])

@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 
 # INITIALIZE APP
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, supports_credentials=True, origins=["*"])
+
 
 discord_token = os.getenv("DISCORD_TOKEN")
 app.config['DISCORD_TOKEN'] = discord_token

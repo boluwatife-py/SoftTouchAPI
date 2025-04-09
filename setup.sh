@@ -3,21 +3,31 @@
 # Exit on any error
 set -e
 
+# Activate virtual environment (adjust if needed for Windows or your environment)
+if [ -f "env/bin/activate" ]; then
+    source env/bin/activate
+elif [ -f "env/Scripts/activate" ]; then
+    source env/Scripts/activate
+else
+    echo "Virtual environment not found! Please create one first."
+    exit 1
+fi
+
 # Purge pip cache to ensure fresh installs
-pip cache purge
+python -m pip cache purge
 
 # Update pip to the latest version
-pip install --upgrade pip
+python -m pip install --upgrade pip
 
 # Install Python dependencies
 # - OpenAI Whisper from GitHub (includes torch by default)
 # - Werkzeug for secure_filename
 # - Flask for the API
-pip3 install git+https://github.com/openai/whisper.git werkzeug flask
+python -m pip install git+https://github.com/openai/whisper.git werkzeug flask
 
 # Install additional requirements from requirements.txt (if it exists)
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
+    python -m pip install -r requirements.txt
 fi
 
 # Install spaCy English model
@@ -48,9 +58,9 @@ fi
 
 # Verify installations
 echo "Verifying installations..."
-python3 -c "import whisper; print('Whisper installed:', whisper.__version__)"
-python3 -c "import flask; print('Flask installed:', flask.__version__)"
-python3 -c "import werkzeug; print('Werkzeug installed:', werkzeug.__version__)"
+python -c "import whisper; print('Whisper installed:', whisper.__version__)"
+python -c "import flask; print('Flask installed:', flask.__version__)"
+python -c "import werkzeug; print('Werkzeug installed:', werkzeug.__version__)"
 ffmpeg -version | head -n 1 || echo "FFmpeg not in PATH, check installation"
 
 echo "Setup complete! Activate your environment and run the app."

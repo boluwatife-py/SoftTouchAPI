@@ -1,117 +1,3 @@
-from flask import Blueprint, jsonify, request, Flask
-from flask_cors import CORS
-from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import create_engine, Column, String, Boolean, Integer, Float, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from typing import List, Optional
-import datetime
-import uuid
-import json
-import jwt
-import bcrypt
-from dotenv import load_dotenv
-import os
-import logging
-load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Database setup
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///api_management.db')
-engine = create_engine(DATABASE_URL, echo=False)  # Set echo=False in production
-Base = declarative_base()
-Session = sessionmaker(bind=engine)
-
-# JWT Secret
-SECRET_KEY = os.getenv('SECRET_KEY')
-if not SECRET_KEY:
-    raise ValueError("SECRET_KEY must be set in .env file")
-
-# Database Models
-class UserDB(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    username = Column(String, nullable=False, unique=True)
-    password_hash = Column(String, nullable=False)  # Hashed with bcrypt
-    is_admin = Column(Boolean, default=False)
-
-class ApiEndpointDB(Base):
-    __tablename__ = 'api_endpoints'
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String, nullable=False)
-    method = Column(String, nullable=False)
-    endpoint = Column(String, nullable=False, unique=True)
-    response_type = Column(String, nullable=False)
-    part_description = Column(Text, nullable=False)
-    description = Column(Text, nullable=False)
-    params = Column(Text, nullable=False)  # JSON string of params
-    enabled = Column(Boolean, default=True)
-    is_visible_in_stats = Column(Boolean, default=True)
-
-class ApiStatsDB(Base):
-    __tablename__ = 'api_stats'
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-    daily_requests = Column(Integer, default=0)
-    weekly_requests = Column(Integer, default=0)
-    monthly_requests = Column(Integer, default=0)
-    average_response_time = Column(Float, default=0.0)
-    success_rate = Column(Float, default=0.0)
-    popularity = Column(Float, default=0.0)
-
-class StatisticsDB(Base):
-    __tablename__ = 'statistics'
-    id = Column(Integer, primary_key=True)
-    total_requests = Column(Integer, default=0)
-    unique_users = Column(Integer, default=0)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-
-# Create tables
-Base.metadata.create_all(engine)
-
-# Create Blueprint
-admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
-
-# Pydantic Models
-class ApiParam(BaseModel):
-    name: str
-    type: str
-    description: str
-
-class ApiEndpoint(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    method: str
-    endpoint: str
-    response_type: str
-    part_description: str
-    description: str
-    params: List[ApiParam]
-    enabled: bool = True
-    is_visible_in_stats: bool = True
-
-class ApiStats(BaseModel):
-    name: str
-    dailyRequests: int = Field(alias='daily_requests')
-    weeklyRequests: int = Field(alias='weekly_requests')
-    monthlyRequests: int = Field(alias='monthly_requests')
-    averageResponseTime: float = Field(alias='average_response_time')
-    successRate: float = Field(alias='success_rate')
-    popularity: float
-
-class Statistics(BaseModel):
-    totalRequests: int = Field(alias='total_requests')
-    uniqueUsers: int = Field(alias='unique_users')
-    timestamp: str
-    apis: List[ApiStats]
-
-class LoginData(BaseModel):
-    username: str
-    password: str
-
 # Authentication middleware
 from flask import Blueprint, jsonify, request
 from pydantic import BaseModel, Field, ValidationError
@@ -258,15 +144,6 @@ def check_admin_auth():
         logger.warning("Invalid token")
         return jsonify({"message": "Invalid token"}), 401
 
-@admin_bp.before_request
-def require_admin():
-    # Skip authentication for OPTIONS requests (CORS preflight)
-    if request.method == "OPTIONS":
-        return None  # Let the request proceed to be handled by CORS
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
-
 @admin_bp.route('/user', methods=['GET'])
 def get_current_user():
     auth_response = check_admin_auth()
@@ -282,7 +159,7 @@ def get_current_user():
     finally:
         session.close()
 
-@admin_bp.route('/login', methods=['POST'])/
+@admin_bp.route('/login', methods=['POST'])
 def login():
     try:
         data = InsertUser(**request.get_json())
@@ -323,7 +200,7 @@ def logout():
 def get_endpoints():
     session = Session()
     try:
-        endpoints = session.query(ApiEndpointDB).all()
+        endpoints = session.query(ApiEndpoint).all()
         logger.info(f"Retrieved {len(endpoints)} endpoints")
         return jsonify({
             "endpoints": [{
@@ -342,7 +219,7 @@ def get_endpoints():
 def get_endpoint(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if endpoint:
             logger.info(f"Retrieved endpoint: {endpoint_id}")
             return jsonify({
@@ -360,7 +237,7 @@ def create_endpoint():
         data = ApiEndpoint(**request.get_json())
         session = Session()
         try:
-            new_endpoint = ApiEndpointDB(
+            new_endpoint = ApiEndpoint(
                 id=data.id,
                 name=data.name,
                 method=data.method,
@@ -391,7 +268,7 @@ def update_endpoint(endpoint_id: str):
         data = ApiEndpoint(**request.get_json())
         session = Session()
         try:
-            endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+            endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
             if not endpoint:
                 logger.warning(f"Endpoint not found for update: {endpoint_id}")
                 return jsonify({"error": "Endpoint not found"}), 404
@@ -421,7 +298,7 @@ def update_endpoint(endpoint_id: str):
 def delete_endpoint(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if endpoint:
             session.delete(endpoint)
             session.commit()
@@ -437,7 +314,7 @@ def delete_endpoint(endpoint_id: str):
 def enable_endpoint(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
             logger.warning(f"Endpoint not found to enable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
@@ -459,7 +336,7 @@ def enable_endpoint(endpoint_id: str):
 def disable_endpoint(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
             logger.warning(f"Endpoint not found to disable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
@@ -482,7 +359,7 @@ def disable_endpoint(endpoint_id: str):
 def show_in_stats(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
             logger.warning(f"Endpoint not found to show in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
@@ -504,7 +381,7 @@ def show_in_stats(endpoint_id: str):
 def hide_in_stats(endpoint_id: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(id=endpoint_id).first()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
             logger.warning(f"Endpoint not found to hide in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
@@ -527,13 +404,13 @@ def hide_in_stats(endpoint_id: str):
 def get_statistics():
     session = Session()
     try:
-        stats = session.query(StatisticsDB).first()
-        visible_endpoints = session.query(ApiEndpointDB).filter_by(is_visible_in_stats=True).all()
+        stats = session.query(Statistic).first()
+        visible_endpoints = session.query(ApiEndpoint).filter_by(is_visible_in_stats=True).all()
         visible_names = {e.name for e in visible_endpoints}
-        apis = session.query(ApiStatsDB).filter(ApiStatsDB.name.in_(visible_names)).all()
+        apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_names)).all()
         
         if not stats:
-            stats = StatisticsDB(total_requests=0, unique_users=0)
+            stats = Statistic(total_requests=0, unique_users=0)
             session.add(stats)
             session.commit()
         
@@ -551,12 +428,12 @@ def get_statistics():
 def get_api_stats(api_name: str):
     session = Session()
     try:
-        endpoint = session.query(ApiEndpointDB).filter_by(name=api_name).first()
+        endpoint = session.query(ApiEndpoint).filter_by(name=api_name).first()
         if not endpoint or not endpoint.is_visible_in_stats:
             logger.warning(f"API stats not found or not visible: {api_name}")
             return jsonify({"error": "API stats not found or not visible"}), 404
         
-        api_stat = session.query(ApiStatsDB).filter_by(name=api_name).first()
+        api_stat = session.query(ApiStat).filter_by(name=api_name).first()
         if api_stat:
             logger.info(f"Retrieved stats for API: {api_name}")
             return jsonify({

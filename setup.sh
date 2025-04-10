@@ -58,9 +58,6 @@ fi
 
 # Verify installations
 echo "Verifying installations..."
-python -c "import whisper; print('Whisper installed:', whisper.__version__)"
-python -c "import flask; print('Flask installed:', flask.__version__)"
-python -c "import werkzeug; print('Werkzeug installed:', werkzeug.__version__)"
 ffmpeg -version | head -n 1 || echo "FFmpeg not in PATH, check installation"
 
 echo "Setup complete! Activate your environment and run the app."

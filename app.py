@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, g
 from flask_cors import CORS
 import api.routes as api
 from pydantic import BaseModel, ValidationError, EmailStr
@@ -6,7 +6,8 @@ import admin.admin as admin
 from utils.discord_bot import setup_discord_bot, send_error_to_discord, send_contact_to_discord 
 from error_handler import configure_error_handlers
 from dotenv import load_dotenv
-import os, logging, json
+import os, logging, json, sqlite3, time
+from datetime import datetime, timedelta
 from admin.admin import ApiEndpoint, Session, ApiEndpointSchema
 
 load_dotenv()
@@ -15,7 +16,6 @@ load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-
 # INITIALIZE APP
 app = Flask(__name__)
 CORS(app, supports_credentials=True, resources={
@@ -23,13 +23,188 @@ CORS(app, supports_credentials=True, resources={
         "origins": [os.getenv("FRONTEND_ADMIN_URL")],
         "expose_headers": ["Authorization"]
     },
-    
     r"/*": {
         "origins": ["*"]
     }
 })
 
+# SQLite Database Setup
+DATABASE = 'api_stats.db'
 
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stats_summary (
+                id INTEGER PRIMARY KEY,
+                total_requests INTEGER,
+                unique_users INTEGER,
+                timestamp TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS api_stats (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                daily_requests INTEGER,
+                weekly_requests INTEGER,
+                monthly_requests INTEGER,
+                average_response_time REAL,
+                success_rate REAL,
+                popularity REAL,
+                last_updated TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS request_log (
+                id INTEGER PRIMARY KEY,
+                api_name TEXT,
+                client_ip TEXT,
+                response_time REAL,
+                status_code INTEGER,
+                timestamp TEXT
+            )
+        ''')
+        
+        db.commit()
+
+# Statistics Tracking Functions
+def update_summary_stats():
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT COUNT(DISTINCT client_ip) FROM request_log')
+    unique_users = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM request_log')
+    total_requests = cursor.fetchone()[0]
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO stats_summary 
+        (id, total_requests, unique_users, timestamp)
+        VALUES (1, ?, ?, ?)
+    ''', (total_requests, unique_users, datetime.utcnow().isoformat()))
+    
+    db.commit()
+
+def update_api_stats(api_name, response_time, status_code):
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT * FROM api_stats WHERE name = ?', (api_name,))
+    api = cursor.fetchone()
+    
+    current_time = datetime.utcnow()
+    success = status_code < 400
+    
+    if api:
+        daily_requests = api['daily_requests'] + 1
+        weekly_requests = api['weekly_requests'] + 1
+        monthly_requests = api['monthly_requests'] + 1
+        
+        last_updated = datetime.fromisoformat(api['last_updated'])
+        reset_daily = current_time.date() > last_updated.date()
+        reset_weekly = current_time - last_updated > timedelta(weeks=1)
+        reset_monthly = current_time - last_updated > timedelta(days=30)
+        
+        if reset_daily:
+            daily_requests = 1
+            # Reset success rate and response time for the new day
+            avg_response_time = response_time
+            success_rate = 100 if success else 0
+        else:
+            # Update running averages
+            avg_response_time = (
+                (api['average_response_time'] * (api['daily_requests']) + response_time)
+                / daily_requests
+            )
+            # Track successes explicitly
+            prev_successes = (api['success_rate'] / 100) * api['daily_requests']
+            new_successes = prev_successes + (1 if success else 0)
+            success_rate = (new_successes / daily_requests) * 100
+        
+        if reset_weekly:
+            weekly_requests = 1
+        if reset_monthly:
+            monthly_requests = 1
+            
+        popularity = min(100.0, monthly_requests / 10.0)
+        
+        cursor.execute('''
+            UPDATE api_stats 
+            SET daily_requests = ?, weekly_requests = ?, monthly_requests = ?,
+                average_response_time = ?, success_rate = ?, popularity = ?,
+                last_updated = ?
+            WHERE name = ?
+        ''', (
+            daily_requests, weekly_requests, monthly_requests,
+            avg_response_time, success_rate, popularity,
+            current_time.isoformat(), api_name
+        ))
+    else:
+        # Initialize new API stats
+        cursor.execute('''
+            INSERT INTO api_stats 
+            (name, daily_requests, weekly_requests, monthly_requests,
+             average_response_time, success_rate, popularity, last_updated)
+            VALUES (?, 1, 1, 1, ?, ?, ?, ?)
+        ''', (
+            api_name, response_time, 
+            100 if success else 0,  # Initial success rate
+            0.1, current_time.isoformat()
+        ))
+    
+    db.commit()
+
+
+@app.before_request
+def before_request():
+    if request.path.startswith('/api'):
+        request.start_time = time.time()
+        g.client_ip = request.remote_addr
+
+@app.after_request
+def after_request(response):
+    if request.path.startswith('/api'):
+        db = get_db()
+        cursor = db.cursor()
+        
+        response_time = (time.time() - request.start_time) * 1000  # ms
+        
+        cursor.execute('''
+            INSERT INTO request_log 
+            (api_name, client_ip, response_time, status_code, timestamp)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (
+            request.path, g.client_ip, response_time,
+            response.status_code, datetime.utcnow().isoformat()
+        ))
+        
+        update_api_stats(request.path, response_time, response.status_code)
+        update_summary_stats()
+        
+        db.commit()
+    
+    return response
+
+# Discord and Environment Setup
 discord_token = os.getenv("DISCORD_TOKEN")
 app.config['DISCORD_TOKEN'] = discord_token
 
@@ -38,59 +213,54 @@ if discord_token:
 else:
     configure_error_handlers(app, None)
 
-load_dotenv()
 API_URL = os.getenv('API_URL')
 
-# MOCKUP STATISTICS RESPONSE DATA
-statistics = {
-    "totalRequests": 100,
-    "uniqueUsers": 50,
-    "timestamp": "2023-03-01T00:00:00",
-    "apis": [
-        {
-            "name": "API 1",
-            "dailyRequests": 20,
-            "weeklyRequests": 100,
-            "monthlyRequests": 500,
-            "averageResponseTime": 100,
-            "successRate": 99.9,
-            "popularity": 99.9
-        },
-        {
-            "name": "API 2",
-            "dailyRequests": 30,
-            "weeklyRequests": 150,
-            "monthlyRequests": 750,
-            "averageResponseTime": 150,
-            "successRate": 99.9,
-            "popularity": 99.9
-        }
-    ]
-}
-
-#REGISTER THE ADMIN BLUEPRINT
+# Blueprints Registration
 app.register_blueprint(admin.admin_bp, url_prefix='/admin')
-
-# API ROUTING
 app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
 app.register_blueprint(api.transcribe_api, url_prefix='/api/text')
 
-
+# Statistics Endpoint
 @app.route('/statistics', methods=['GET'])
 def statistics_endpoints():
-    return jsonify(statistics)
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('SELECT * FROM stats_summary WHERE id = 1')
+    summary = cursor.fetchone()
+    
+    cursor.execute('SELECT * FROM api_stats')
+    apis = cursor.fetchall()
+    
+    stats = {
+        "totalRequests": summary['total_requests'] if summary else 0,
+        "uniqueUsers": summary['unique_users'] if summary else 0,
+        "timestamp": summary['timestamp'] if summary else datetime.utcnow().isoformat(),
+        "apis": [
+            {
+                "name": api['name'],
+                "dailyRequests": api['daily_requests'],
+                "weeklyRequests": api['weekly_requests'],
+                "monthlyRequests": api['monthly_requests'],
+                "averageResponseTime": api['average_response_time'],
+                "successRate": api['success_rate'],
+                "popularity": api['popularity']
+            } for api in apis
+        ]
+    }
+    
+    return jsonify(stats)
 
-
+# Existing Endpoints
 @app.route('/endpoint', methods=['GET'])
 def get_enabled_endpoints():
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).filter_by(enabled=True).all()
         logger.info(f"Retrieved {len(endpoints)} enabled endpoints")
-        
         
         api_endpoints = []
         for e in endpoints:
@@ -123,7 +293,6 @@ def get_enabled_endpoints():
                 enabled=e.enabled,
                 is_visible_in_stats=e.is_visible_in_stats
             )
-            # Construct response in requested format
             formatted_endpoint = {
                 "name": endpoint_data.name,
                 "method": endpoint_data.method,
@@ -150,13 +319,11 @@ def get_enabled_endpoints():
     finally:
         session.close()
 
-
 class ContactForm(BaseModel):
     name: str
     email: EmailStr
     message: str
     subject: str
-
 
 @app.route('/contact', methods=['POST'])
 def submit_contact_form():
@@ -175,9 +342,7 @@ def submit_contact_form():
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
 
-
-# setup_discord_bot()
-
-
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    if not os.path.exists(DATABASE):
+        init_db()
+    app.run(debug=False, host='0.0.0.0', port=5000)

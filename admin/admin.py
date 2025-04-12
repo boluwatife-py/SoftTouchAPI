@@ -168,11 +168,11 @@ def login():
             user = session.query(User).filter_by(username=data.username).first()
             if not user:
                 logger.warning(f"Login failed: Invalid username {data.username}")
-                return jsonify({"message": "Incorrect username or password"}), 401
+                return jsonify({"message": "Incorrect username"}), 401
             
             if not bcrypt.checkpw(data.password.encode('utf-8'), user.password.encode('utf-8')):
                 logger.warning(f"Login failed: Invalid password for {data.username}")
-                return jsonify({"message": "Incorrect username or password"}), 401
+                return jsonify({"message": "Incorrect password"}), 401
             
             token = jwt.encode({
                 'user_id': user.id,

@@ -5,6 +5,11 @@ from typing import List, Dict, Optional
 
 text_api = Blueprint('text_api', __name__)
 
+# Configure logging
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Load spaCy model with error handling
 try:
     nlp = spacy.load("en_core_web_sm")
@@ -13,13 +18,15 @@ except OSError:
         "error": "Failed to load spaCy model. Please ensure 'en_core_web_sm' is installed.",
         "solution": "Run: python -m spacy download en_core_web_sm"
     }
-    raise RuntimeError(jsonify(return_error))
+    logger.error(return_error["error"])
+    raise RuntimeError(json.dumps(return_error))
 
 def preprocess_text(text: str) -> str:
     """Clean and normalize text."""
     try:
         return re.sub(r'\s+', ' ', text.strip())
     except Exception as e:
+        logger.error(f"Text preprocessing failed: {str(e)}")
         raise ValueError(f"Text preprocessing failed: {str(e)}")
 
 def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
@@ -31,6 +38,7 @@ def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
             return []
         return [word for word, _ in Counter(words).most_common(min(num_keywords, len(set(words))))]
     except Exception as e:
+        logger.error(f"Keyword extraction failed: {str(e)}")
         raise RuntimeError(f"Keyword extraction failed: {str(e)}")
 
 def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, str]:
@@ -44,10 +52,12 @@ def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, 
             return False, f"Text exceeds {max_length} characters"
         return True, ""
     except Exception as e:
+        logger.error(f"Input validation error: {str(e)}")
         return False, f"Input validation error: {str(e)}"
 
 def handle_exception(e):
     """Generate JSON error response from exception."""
+    logger.error(f"Exception occurred: {str(e)}")
     return jsonify({
         'error': str(e),
         'traceback': traceback.format_exc() if isinstance(e, Exception) else None
@@ -69,16 +79,22 @@ def analyze_text():
     """
     try:
         data = request.get_json(silent=True)
+        logger.debug(f"Received data: {data}")
         if not data:
             raw_data = request.data.decode('utf-8')
+            logger.debug(f"Raw data: {raw_data}")
             if not raw_data:
+                logger.warning("Request body is empty")
                 return jsonify({'error': 'Request body is empty'}), 400
             try:
                 data = json.loads(raw_data)
+                logger.debug(f"Parsed raw data: {data}")
             except json.JSONDecodeError:
+                logger.warning("Invalid JSON format in request body")
                 return jsonify({'error': 'Invalid JSON format in request body'}), 400
 
         if not isinstance(data, dict):
+            logger.warning(f"Request body is not a JSON object: {data}")
             return jsonify({'error': 'Request body must be a JSON object'}), 400
 
         text = data.get('text')
@@ -87,9 +103,11 @@ def analyze_text():
         # Validate input
         is_valid, error_msg = validate_input(text)
         if not is_valid:
+            logger.warning(f"Input validation failed: {error_msg}")
             return jsonify({'error': error_msg}), 400
         
         if not isinstance(num_keywords, int) or num_keywords < 1 or num_keywords > 20:
+            logger.warning(f"Invalid num_keywords: {num_keywords}")
             return jsonify({'error': 'num_keywords must be an integer between 1 and 20'}), 400
 
         start_time = time.time()
@@ -108,6 +126,7 @@ def analyze_text():
 
         processing_time = time.time() - start_time
 
+        logger.info(f"Text analysis completed for text: {text[:50]}...")
         return jsonify({
             'success': True,
             'entities': entities,
@@ -118,6 +137,7 @@ def analyze_text():
         }), 200
 
     except ValueError as ve:
+        logger.warning(f"ValueError in analyze_text: {str(ve)}")
         return jsonify({'error': str(ve)}), 400
     except Exception as e:
         return handle_exception(e)
@@ -135,16 +155,22 @@ def sentiment_analysis():
     """
     try:
         data = request.get_json(silent=True)
+        logger.debug(f"Received data: {data}")
         if not data:
             raw_data = request.data.decode('utf-8')
+            logger.debug(f"Raw data: {raw_data}")
             if not raw_data:
+                logger.warning("Request body is empty")
                 return jsonify({'error': 'Request body is empty'}), 400
             try:
                 data = json.loads(raw_data)
+                logger.debug(f"Parsed raw data: {data}")
             except json.JSONDecodeError:
+                logger.warning("Invalid JSON format in request body")
                 return jsonify({'error': 'Invalid JSON format in request body'}), 400
 
         if not isinstance(data, dict):
+            logger.warning(f"Request body is not a JSON object: {data}")
             return jsonify({'error': 'Request body must be a JSON object'}), 400
 
         text = data.get('text')
@@ -152,6 +178,7 @@ def sentiment_analysis():
         # Validate input
         is_valid, error_msg = validate_input(text)
         if not is_valid:
+            logger.warning(f"Input validation failed: {error_msg}")
             return jsonify({'error': error_msg}), 400
 
         start_time = time.time()
@@ -165,6 +192,7 @@ def sentiment_analysis():
 
         processing_time = time.time() - start_time
 
+        logger.info(f"Sentiment analysis completed for text: {text[:50]}...")
         return jsonify({
             'success': True,
             'sentiment': {
@@ -180,58 +208,7 @@ def sentiment_analysis():
         }), 200
 
     except ValueError as ve:
+        logger.warning(f"ValueError in sentiment_analysis: {str(ve)}")
         return jsonify({'error': str(ve)}), 400
-    except Exception as e:
-        return handle_exception(e)
-
-@text_api.route('/analyze', methods=['GET'])
-def analyze_info():
-    """Return /analyze endpoint info."""
-    try:
-        return jsonify({
-            'endpoint': '/api/text/analyze',
-            'method': 'POST',
-            'description': 'Analyze text for entities, keywords, word count, and POS tags',
-            'parameters': {
-                'text': 'string (required)',
-                'num_keywords': 'integer (optional, default: 5, max: 20)'
-            },
-            'returns': {
-                'success': 'boolean',
-                'entities': 'list of {text, label} objects (max 5)',
-                'keywords': 'list of top keywords',
-                'word_count': 'integer',
-                'pos_tags': 'list of {text, pos} objects (max 10)',
-                'processing_time': 'float (seconds)'
-            }
-        }), 200
-    except Exception as e:
-        return handle_exception(e)
-
-@text_api.route('/sentiment', methods=['GET'])
-def sentiment_info():
-    """Return /sentiment endpoint info."""
-    try:
-        return jsonify({
-            'endpoint': '/api/text/sentiment',
-            'method': 'POST',
-            'description': 'Analyze text sentiment (polarity and subjectivity)',
-            'parameters': {
-                'text': 'string (required)'
-            },
-            'returns': {
-                'success': 'boolean',
-                'sentiment': {
-                    'polarity': 'float (-1 to 1)',
-                    'subjectivity': 'float (0 to 1, placeholder)'
-                },
-                'interpretation': {
-                    'polarity': 'string (positive/neutral/negative)',
-                    'subjectivity': 'string (subjective/objective)'
-                },
-                'processing_time': 'float (seconds)',
-                'note': 'string (limitations info)'
-            }
-        }), 200
     except Exception as e:
         return handle_exception(e)

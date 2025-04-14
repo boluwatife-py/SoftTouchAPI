@@ -3,6 +3,9 @@
 # Exit on any error
 set -e
 
+python -m venv env
+echo "Virtual environment created."
+
 # Activate virtual environment (adjust if needed for Windows or your environment)
 if [ -f "env/bin/activate" ]; then
     source env/bin/activate

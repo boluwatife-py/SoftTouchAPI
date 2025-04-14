@@ -29,8 +29,8 @@ class ApiEndpoint(Base):
     response_type = Column(String, nullable=False)
     part_description = Column(Text, nullable=False)
     description = Column(Text, nullable=False)
-    params = Column(Text, nullable=False)  # JSON string of params
-    sample_request = Column(Text, nullable=True)  # JSON string of sample request
+    params = Column(Text, nullable=False)
+    sample_request = Column(Text, nullable=True)
     sample_response = Column(Text, nullable=True)  # JSON string of sample response
     enabled = Column(Boolean, default=True)
     is_visible_in_stats = Column(Boolean, default=True)

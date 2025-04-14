@@ -38,14 +38,6 @@ def validate_input(file: Optional[object], language: Optional[str] = None) -> tu
     except Exception as e:
         return False, f"Input validation error: {str(e)}"
 
-def handle_exception(e):
-    """Generate JSON error response from exception."""
-    return jsonify({
-        'success': False,
-        'error': str(e),
-        'traceback': traceback.format_exc() if isinstance(e, Exception) else None
-    }), 500
-
 @transcribe_api.route('/transcribe', methods=['POST'])
 def api_transcribe():
     """
@@ -84,26 +76,3 @@ def api_transcribe():
     
     except ValueError as ve:
         return jsonify({'success': False, 'error': str(ve)}), 400
-    except Exception as e:
-        return handle_exception(e)
-
-@transcribe_api.route('/info', methods=['GET'])
-def transcribe_info():
-    """Return API info as JSON."""
-    try:
-        return jsonify({
-            "endpoint": "/transcribe",
-            "method": "POST",
-            "description": "Transcribes audio to text using OpenAI Whisper, returning the text directly.",
-            "parameters": {
-                "audio": "audio file to transcribe (required, supported: .mp3, .wav, .m4a)",
-                "language": "optional 2-character ISO language code (e.g., 'en')"
-            },
-            "returns": {
-                "success": "boolean (only in error cases)",
-                "transcription": "plain text string of the transcribed audio",
-                "content_type": "text/plain"
-            }
-        }), 200
-    except Exception as e:
-        return handle_exception(e)

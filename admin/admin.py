@@ -1,17 +1,16 @@
 from flask import Blueprint, jsonify, request
-from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import create_engine, Column, String, Boolean, Integer, Float, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from typing import List, Optional, Any
+from pydantic import ValidationError
 import datetime
-import uuid
 import json
 import jwt
 import bcrypt
 from dotenv import load_dotenv
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logging
+from shared.database import Session, User, ApiEndpoint, ApiStat, Statistic
+from shared.schema import ApiEndpointSchema, ApiStatSchema, InsertUser
 
 load_dotenv()
 
@@ -19,99 +18,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Database setup
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///api_management.db')
-engine = create_engine(DATABASE_URL, echo=False)
-Base = declarative_base()
-Session = sessionmaker(bind=engine)
-
 # JWT Secret
 SECRET_KEY = os.getenv('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY must be set in .env file")
-
-# Database Models
-class User(Base):
-    __tablename__ = 'users'
-    id = Column(Integer, primary_key=True)
-    username = Column(String, nullable=False, unique=True)
-    password = Column(String, nullable=False)  # Hashed with bcrypt
-    is_admin = Column(Boolean, default=False)
-
-class ApiEndpoint(Base):
-    __tablename__ = 'api_endpoints'
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String, nullable=False)
-    method = Column(String, nullable=False)
-    endpoint = Column(String, nullable=False, unique=True)
-    response_type = Column(String, nullable=False)
-    part_description = Column(Text, nullable=False)
-    description = Column(Text, nullable=False)
-    params = Column(Text, nullable=False)  # JSON string of params
-    sample_request = Column(Text, nullable=True)  # JSON string of sample request
-    sample_response = Column(Text, nullable=True)  # JSON string of sample response
-    enabled = Column(Boolean, default=True)
-    is_visible_in_stats = Column(Boolean, default=True)
-
-class ApiStat(Base):
-    __tablename__ = 'api_stats'
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False, unique=True)
-    daily_requests = Column(Integer, default=0)
-    weekly_requests = Column(Integer, default=0)
-    monthly_requests = Column(Integer, default=0)
-    average_response_time = Column(Float, default=0.0)
-    success_rate = Column(Float, default=0.0)
-    popularity = Column(Float, default=0.0)
-
-class Statistic(Base):
-    __tablename__ = 'statistics'
-    id = Column(Integer, primary_key=True)
-    total_requests = Column(Integer, default=0)
-    unique_users = Column(Integer, default=0)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-
-# Create tables
-Base.metadata.create_all(engine)
-
-# Pydantic Models
-class ApiParam(BaseModel):
-    name: str
-    type: str
-    description: str
-
-class ApiEndpointSchema(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    method: str
-    endpoint: str
-    response_type: str
-    part_description: str
-    description: str
-    params: List[ApiParam]
-    sample_request: Optional[Any] = None  # Flexible to accept dict or str
-    sample_response: Optional[Any] = None  # Flexible to accept dict or str
-    enabled: bool = True
-    is_visible_in_stats: bool = True
-
-class ApiStatSchema(BaseModel):
-    name: str
-    dailyRequests: int = Field(alias='daily_requests')
-    weeklyRequests: int = Field(alias='weekly_requests')
-    monthlyRequests: int = Field(alias='monthly_requests')
-    averageResponseTime: float = Field(alias='average_response_time')
-    successRate: float = Field(alias='success_rate')
-    popularity: float
-
-class StatisticsSchema(BaseModel):
-    totalRequests: int = Field(alias='total_requests')
-    uniqueUsers: int = Field(alias='unique_users')
-    timestamp: str
-    apis: List[ApiStatSchema]
-
-class InsertUser(BaseModel):
-    username: str
-    password: str
 
 # Create Blueprint
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
@@ -686,7 +596,7 @@ def get_statistics():
         return jsonify({
             "totalRequests": stats.total_requests,
             "uniqueUsers": stats.unique_users,
-            "timestamp": stats.timestamp.isoformat(),
+            "timestamp": stats.timestamp.isoformat() if stats.timestamp else datetime.utcnow().isoformat(),
             "apis": api_stats
         })
     finally:

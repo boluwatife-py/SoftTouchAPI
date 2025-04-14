@@ -55,13 +55,6 @@ def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, 
         logger.error(f"Input validation error: {str(e)}")
         return False, f"Input validation error: {str(e)}"
 
-def handle_exception(e):
-    """Generate JSON error response from exception."""
-    logger.error(f"Exception occurred: {str(e)}")
-    return jsonify({
-        'error': str(e),
-        'traceback': traceback.format_exc() if isinstance(e, Exception) else None
-    }), 500
 
 @text_api.route('/analyze', methods=['POST'])
 def analyze_text():
@@ -139,8 +132,7 @@ def analyze_text():
     except ValueError as ve:
         logger.warning(f"ValueError in analyze_text: {str(ve)}")
         return jsonify({'error': str(ve)}), 400
-    except Exception as e:
-        return handle_exception(e)
+    
 
 @text_api.route('/sentiment', methods=['POST'])
 def sentiment_analysis():
@@ -210,5 +202,3 @@ def sentiment_analysis():
     except ValueError as ve:
         logger.warning(f"ValueError in sentiment_analysis: {str(ve)}")
         return jsonify({'error': str(ve)}), 400
-    except Exception as e:
-        return handle_exception(e)

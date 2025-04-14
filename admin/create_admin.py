@@ -1,7 +1,9 @@
 import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import bcrypt
 from dotenv import load_dotenv
-from admin import User, Session  # Assumes admin.py is in the same folder
+from shared.database import User, Session
 
 # Load environment variables
 load_dotenv()

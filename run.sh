@@ -13,8 +13,5 @@ else
     exit 1
 fi
 
-# Optional: Print FFmpeg version
-ffmpeg -version | head -n 1 || echo "FFmpeg not found"
-
-# Start the Flask app using gunicorn
+python admin/create_admin.py
 exec gunicorn app:app --bind 0.0.0.0:5000

@@ -12,7 +12,7 @@ logger.setLevel(logging.INFO)  # Show only INFO and above (no DEBUG)
 # Suppress Discord library logs unless they’re ERROR or higher
 for logger_name in ['discord', 'discord.http', 'discord.gateway', 'discord.client']:
     discord_logger = logging.getLogger(logger_name)
-    discord_logger.setLevel(logging.ERROR)  # Only show ERRORs from Discord
+    discord_logger.setLevel(logging.ERROR)
 
 # Global variables
 discord_bot = None

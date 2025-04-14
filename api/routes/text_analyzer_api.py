@@ -18,7 +18,7 @@ except OSError:
         "error": "Failed to load spaCy model. Please ensure 'en_core_web_sm' is installed.",
         "solution": "Run: python -m spacy download en_core_web_sm"
     }
-    logger.error(return_error["error"])
+    
     raise RuntimeError(json.dumps(return_error))
 
 def preprocess_text(text: str) -> str:
@@ -26,7 +26,6 @@ def preprocess_text(text: str) -> str:
     try:
         return re.sub(r'\s+', ' ', text.strip())
     except Exception as e:
-        logger.error(f"Text preprocessing failed: {str(e)}")
         raise ValueError(f"Text preprocessing failed: {str(e)}")
 
 def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
@@ -38,7 +37,6 @@ def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
             return []
         return [word for word, _ in Counter(words).most_common(min(num_keywords, len(set(words))))]
     except Exception as e:
-        logger.error(f"Keyword extraction failed: {str(e)}")
         raise RuntimeError(f"Keyword extraction failed: {str(e)}")
 
 def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, str]:
@@ -52,7 +50,6 @@ def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, 
             return False, f"Text exceeds {max_length} characters"
         return True, ""
     except Exception as e:
-        logger.error(f"Input validation error: {str(e)}")
         return False, f"Input validation error: {str(e)}"
 
 
@@ -72,22 +69,16 @@ def analyze_text():
     """
     try:
         data = request.get_json(silent=True)
-        logger.debug(f"Received data: {data}")
         if not data:
             raw_data = request.data.decode('utf-8')
-            logger.debug(f"Raw data: {raw_data}")
             if not raw_data:
-                logger.warning("Request body is empty")
                 return jsonify({'error': 'Request body is empty'}), 400
             try:
                 data = json.loads(raw_data)
-                logger.debug(f"Parsed raw data: {data}")
             except json.JSONDecodeError:
-                logger.warning("Invalid JSON format in request body")
                 return jsonify({'error': 'Invalid JSON format in request body'}), 400
 
         if not isinstance(data, dict):
-            logger.warning(f"Request body is not a JSON object: {data}")
             return jsonify({'error': 'Request body must be a JSON object'}), 400
 
         text = data.get('text')
@@ -96,11 +87,9 @@ def analyze_text():
         # Validate input
         is_valid, error_msg = validate_input(text)
         if not is_valid:
-            logger.warning(f"Input validation failed: {error_msg}")
             return jsonify({'error': error_msg}), 400
         
         if not isinstance(num_keywords, int) or num_keywords < 1 or num_keywords > 20:
-            logger.warning(f"Invalid num_keywords: {num_keywords}")
             return jsonify({'error': 'num_keywords must be an integer between 1 and 20'}), 400
 
         start_time = time.time()
@@ -118,8 +107,6 @@ def analyze_text():
         pos_tags = [{'text': token.text, 'pos': token.pos_} for token in doc][:10]
 
         processing_time = time.time() - start_time
-
-        logger.info(f"Text analysis completed for text: {text[:50]}...")
         return jsonify({
             'success': True,
             'entities': entities,
@@ -130,7 +117,6 @@ def analyze_text():
         }), 200
 
     except ValueError as ve:
-        logger.warning(f"ValueError in analyze_text: {str(ve)}")
         return jsonify({'error': str(ve)}), 400
     
 
@@ -147,22 +133,16 @@ def sentiment_analysis():
     """
     try:
         data = request.get_json(silent=True)
-        logger.debug(f"Received data: {data}")
         if not data:
             raw_data = request.data.decode('utf-8')
-            logger.debug(f"Raw data: {raw_data}")
             if not raw_data:
-                logger.warning("Request body is empty")
                 return jsonify({'error': 'Request body is empty'}), 400
             try:
                 data = json.loads(raw_data)
-                logger.debug(f"Parsed raw data: {data}")
             except json.JSONDecodeError:
-                logger.warning("Invalid JSON format in request body")
                 return jsonify({'error': 'Invalid JSON format in request body'}), 400
 
         if not isinstance(data, dict):
-            logger.warning(f"Request body is not a JSON object: {data}")
             return jsonify({'error': 'Request body must be a JSON object'}), 400
 
         text = data.get('text')
@@ -170,7 +150,6 @@ def sentiment_analysis():
         # Validate input
         is_valid, error_msg = validate_input(text)
         if not is_valid:
-            logger.warning(f"Input validation failed: {error_msg}")
             return jsonify({'error': error_msg}), 400
 
         start_time = time.time()
@@ -183,8 +162,6 @@ def sentiment_analysis():
         subjectivity = 0.5  # Placeholder; spaCy doesn’t provide this
 
         processing_time = time.time() - start_time
-
-        logger.info(f"Sentiment analysis completed for text: {text[:50]}...")
         return jsonify({
             'success': True,
             'sentiment': {
@@ -200,5 +177,4 @@ def sentiment_analysis():
         }), 200
 
     except ValueError as ve:
-        logger.warning(f"ValueError in sentiment_analysis: {str(ve)}")
         return jsonify({'error': str(ve)}), 400

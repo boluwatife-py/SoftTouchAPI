@@ -30,7 +30,6 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 def check_admin_auth():
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
-        logger.warning("No Authorization header provided")
         return jsonify({"message": "Unauthorized"}), 401
     
     token = auth_header.split(' ')[1]
@@ -40,20 +39,16 @@ def check_admin_auth():
         try:
             user = session.query(User).filter_by(id=payload['user_id']).first()
             if not user:
-                logger.warning("User not found for token")
                 return jsonify({"message": "User not found"}), 401
             if not user.is_admin:
-                logger.warning(f"Non-admin user attempted access: {user.username}")
                 return jsonify({"message": "Admin access required"}), 403
             request.user_id = payload['user_id']
             return None
         finally:
             session.close()
     except jwt.ExpiredSignatureError:
-        logger.warning("Token expired")
         return jsonify({"message": "Token expired"}), 401
     except jwt.InvalidTokenError:
-        logger.warning("Invalid token")
         return jsonify({"message": "Invalid token"}), 401
 
 @admin_bp.route('/user', methods=['GET'])
@@ -65,7 +60,6 @@ def get_current_user():
     try:
         user = session.query(User).filter_by(id=request.user_id).first()
         if user:
-            logger.info(f"User retrieved: {user.username}")
             return jsonify({"id": user.id, "username": user.username})
         return jsonify({"message": "User not found"}), 404
     finally:
@@ -79,11 +73,9 @@ def login():
         try:
             user = session.query(User).filter_by(username=data.username).first()
             if not user:
-                logger.warning(f"Login failed: Invalid username {data.username}")
                 return jsonify({"message": "Incorrect username"}), 401
             
             if not bcrypt.checkpw(data.password.encode('utf-8'), user.password.encode('utf-8')):
-                logger.warning(f"Login failed: Invalid password for {data.username}")
                 return jsonify({"message": "Incorrect password"}), 401
             
             token = jwt.encode({
@@ -91,19 +83,16 @@ def login():
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
             }, SECRET_KEY, algorithm='HS256')
             
-            logger.info(f"User logged in: {user.username}")
             response = jsonify({"id": user.id, "username": user.username})
             response.headers['Authorization'] = f'Bearer {token}'
             return response
         finally:
             session.close()
     except ValidationError as e:
-        logger.error(f"Login validation failed: {e.errors()}")
         return jsonify({"message": "Validation failed", "details": e.errors()}), 400
 
 @admin_bp.route('/logout', methods=['POST'])
 def logout():
-    logger.info("User logged out (client-side token discard)")
     return '', 204
 
 # API CRUD Operations
@@ -115,7 +104,6 @@ def get_endpoints():
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
-        logger.info(f"Retrieved {len(endpoints)} endpoints")
         response_data = [
             ApiEndpointSchema(
                 id=e.id,
@@ -138,7 +126,6 @@ def get_endpoints():
             "timestamp": datetime.datetime.utcnow().isoformat()
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -152,7 +139,6 @@ def get_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if endpoint:
-            logger.info(f"Retrieved endpoint: {endpoint_id}")
             response_data = ApiEndpointSchema(
                 id=endpoint.id,
                 name=endpoint.name,
@@ -168,10 +154,8 @@ def get_endpoint(endpoint_id: str):
                 is_visible_in_stats=endpoint.is_visible_in_stats
             )
             return jsonify(response_data.model_dump())
-        logger.warning(f"Endpoint not found: {endpoint_id}")
         return jsonify({"error": "Endpoint not found"}), 404
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -201,7 +185,7 @@ def create_endpoint():
             )
             session.add(new_endpoint)
             session.commit()
-            logger.info(f"Created endpoint: {data.name}")
+            
             response_data = ApiEndpointSchema(
                 id=new_endpoint.id,
                 name=new_endpoint.name,
@@ -223,10 +207,8 @@ def create_endpoint():
         finally:
             session.close()
     except ValidationError as e:
-        logger.error(f"Endpoint creation failed: {e.errors()}")
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in input"}), 400
 
 @admin_bp.route('/endpoints/<endpoint_id>', methods=['PUT'])
@@ -240,7 +222,6 @@ def update_endpoint(endpoint_id: str):
         try:
             endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
             if not endpoint:
-                logger.warning(f"Endpoint not found for update: {endpoint_id}")
                 return jsonify({"error": "Endpoint not found"}), 404
             endpoint.name = data.name
             endpoint.method = data.method
@@ -254,7 +235,6 @@ def update_endpoint(endpoint_id: str):
             endpoint.enabled = data.enabled
             endpoint.is_visible_in_stats = data.is_visible_in_stats
             session.commit()
-            logger.info(f"Updated endpoint: {endpoint_id}")
             response_data = ApiEndpointSchema(
                 id=endpoint.id,
                 name=endpoint.name,
@@ -276,10 +256,8 @@ def update_endpoint(endpoint_id: str):
         finally:
             session.close()
     except ValidationError as e:
-        logger.error(f"Endpoint update failed: {e.errors()}")
         return jsonify({"error": "Validation failed", "details": e.errors()}), 400
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in input"}), 400
 
 @admin_bp.route('/endpoints/<endpoint_id>', methods=['DELETE'])
@@ -293,9 +271,7 @@ def delete_endpoint(endpoint_id: str):
         if endpoint:
             session.delete(endpoint)
             session.commit()
-            logger.info(f"Deleted endpoint: {endpoint_id}")
             return jsonify({"message": "Endpoint deleted successfully"})
-        logger.warning(f"Endpoint not found for deletion: {endpoint_id}")
         return jsonify({"error": "Endpoint not found"}), 404
     finally:
         session.close()
@@ -310,13 +286,11 @@ def enable_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            logger.warning(f"Endpoint not found to enable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         if endpoint.enabled:
             return jsonify({"message": "Endpoint is already enabled"})
         endpoint.enabled = True
         session.commit()
-        logger.info(f"Enabled endpoint: {endpoint_id}")
         response_data = ApiEndpointSchema(
             id=endpoint.id,
             name=endpoint.name,
@@ -336,7 +310,6 @@ def enable_endpoint(endpoint_id: str):
             "endpoint": response_data.model_dump()
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -350,13 +323,11 @@ def disable_endpoint(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            logger.warning(f"Endpoint not found to disable: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         if not endpoint.enabled:
             return jsonify({"message": "Endpoint is already disabled"})
         endpoint.enabled = False
         session.commit()
-        logger.info(f"Disabled endpoint: {endpoint_id}")
         response_data = ApiEndpointSchema(
             id=endpoint.id,
             name=endpoint.name,
@@ -376,7 +347,6 @@ def disable_endpoint(endpoint_id: str):
             "endpoint": response_data.model_dump()
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -391,7 +361,6 @@ def enable_all_endpoints():
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            logger.warning("No endpoints found to enable")
             return jsonify({"message": "No endpoints found"}), 404
         
         updated_count = 0
@@ -404,7 +373,7 @@ def enable_all_endpoints():
             return jsonify({"message": "All endpoints are already enabled"})
         
         session.commit()
-        logger.info(f"Enabled {updated_count} endpoints")
+        
         
         response_data = [
             ApiEndpointSchema(
@@ -428,7 +397,6 @@ def enable_all_endpoints():
             "endpoints": response_data
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -442,7 +410,6 @@ def disable_all_endpoints():
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            logger.warning("No endpoints found to disable")
             return jsonify({"message": "No endpoints found"}), 404
         
         updated_count = 0
@@ -455,7 +422,6 @@ def disable_all_endpoints():
             return jsonify({"message": "All endpoints are already disabled"})
         
         session.commit()
-        logger.info(f"Disabled {updated_count} endpoints")
         
         response_data = [
             ApiEndpointSchema(
@@ -479,7 +445,6 @@ def disable_all_endpoints():
             "endpoints": response_data
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -494,13 +459,11 @@ def show_in_stats(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            logger.warning(f"Endpoint not found to show in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         if endpoint.is_visible_in_stats:
             return jsonify({"message": "Endpoint is already visible in stats"})
         endpoint.is_visible_in_stats = True
         session.commit()
-        logger.info(f"Set endpoint visible in stats: {endpoint_id}")
         response_data = ApiEndpointSchema(
             id=endpoint.id,
             name=endpoint.name,
@@ -520,7 +483,6 @@ def show_in_stats(endpoint_id: str):
             "endpoint": response_data.model_dump()
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -534,13 +496,11 @@ def hide_in_stats(endpoint_id: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            logger.warning(f"Endpoint not found to hide in stats: {endpoint_id}")
             return jsonify({"error": "Endpoint not found"}), 404
         if not endpoint.is_visible_in_stats:
             return jsonify({"message": "Endpoint is already hidden from stats"})
         endpoint.is_visible_in_stats = False
         session.commit()
-        logger.info(f"Hid endpoint from stats: {endpoint_id}")
         response_data = ApiEndpointSchema(
             id=endpoint.id,
             name=endpoint.name,
@@ -560,7 +520,6 @@ def hide_in_stats(endpoint_id: str):
             "endpoint": response_data.model_dump()
         })
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON fields: {str(e)}")
         return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
@@ -581,7 +540,6 @@ def get_statistics():
             stats = Statistic(total_requests=0, unique_users=0)
             session.add(stats)
             session.commit()
-        logger.info("Retrieved statistics")
         api_stats = [
             ApiStatSchema(
                 name=api.name,
@@ -611,11 +569,9 @@ def get_api_stats(api_name: str):
     try:
         endpoint = session.query(ApiEndpoint).filter_by(name=api_name).first()
         if not endpoint or not endpoint.is_visible_in_stats:
-            logger.warning(f"API stats not found or not visible: {api_name}")
             return jsonify({"error": "API stats not found or not visible"}), 404
         api_stat = session.query(ApiStat).filter_by(name=api_name).first()
         if api_stat:
-            logger.info(f"Retrieved stats for API: {api_name}")
             response_data = ApiStatSchema(
                 name=api_stat.name,
                 daily_requests=api_stat.daily_requests,

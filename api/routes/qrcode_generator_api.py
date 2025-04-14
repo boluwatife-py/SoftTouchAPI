@@ -152,8 +152,7 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
                 f'<clipPath id="clip"><rect width="100%" height="100%" rx="{total_size * 0.05}" ry="{total_size * 0.05}"/></clipPath>'
                 f'{svg_code}</svg>'
             )
-        if image_file:
-            logger.warning("Image embedding not supported for SVG in this implementation")
+            
         mime_type = 'image/svg+xml'
         return svg_code, mime_type, None
     else:

@@ -39,7 +39,6 @@ def close_connection(exception):
         db.close()
 
 def init_db():
-    # Tables are created in database.py
     pass
 
 # Statistics Tracking Functions
@@ -178,10 +177,9 @@ def statistics_endpoints():
     session = Session()
     try:
         stat = session.query(Statistic).filter_by(id=1).first()
-        # Only include APIs where is_visible_in_stats is True
         visible_endpoints = session.query(ApiEndpoint).filter_by(is_visible_in_stats=True).all()
-        visible_names = {e.name for e in visible_endpoints}
-        apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_names)).all()
+        visible_ed = {e.endpoint for e in visible_endpoints}
+        apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_ed)).all()
         
         stats = {
             "totalRequests": stat.total_requests if stat else 0,
@@ -209,7 +207,6 @@ def get_enabled_endpoints():
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).filter_by(enabled=True).all()
-        logger.info(f"Retrieved {len(endpoints)} enabled endpoints")
         
         api_endpoints = []
         for e in endpoints:
@@ -228,6 +225,7 @@ def get_enabled_endpoints():
             except json.JSONDecodeError:
                 logger.warning(f"Invalid sample_response JSON for endpoint {e.id}")
                 sample_response = {}
+
             endpoint_data = ApiEndpointSchema(
                 id=e.id,
                 name=e.name,

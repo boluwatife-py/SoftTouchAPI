@@ -221,7 +221,7 @@ app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
-app.register_blueprint(api.transcribe_api, url_prefix='/api/text')
+# app.register_blueprint(api.transcribe_api, url_prefix='/api/text')
 
 # Statistics Endpoint
 @app.route('/statistics', methods=['GET'])
@@ -342,6 +342,8 @@ def submit_contact_form():
     except ValidationError as e:
         return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
 
+
+setup_discord_bot()
 if __name__ == '__main__':
     if not os.path.exists(DATABASE):
         init_db()

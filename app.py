@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # INITIALIZE APP
 app = Flask(__name__)
+
 CORS(app, supports_credentials=True, resources={
     r"/admin/*": {
         "origins": [os.getenv("FRONTEND_ADMIN_URL")],
@@ -347,4 +348,4 @@ setup_discord_bot()
 if __name__ == '__main__':
     if not os.path.exists(DATABASE):
         init_db()
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)

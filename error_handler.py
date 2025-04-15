@@ -26,6 +26,7 @@ def configure_error_handlers(app, discord_callback):
             'remote_addr': request.remote_addr
         }
         
+        print(e)
         # Send to Discord if callback is provided (only for server errors)
         if discord_callback:
             discord_callback(error_info)

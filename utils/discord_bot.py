@@ -4,20 +4,21 @@ from datetime import datetime
 import discord
 import asyncio
 import threading
+import httpx
 
 # Configure logging - minimal output
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Show only INFO and above (no DEBUG)
 
 # Suppress Discord library logs unless they’re ERROR or higher
-for logger_name in ['discord', 'discord.http', 'discord.gateway', 'discord.client']:
+for logger_name in ['discord', 'discord.http']:
     discord_logger = logging.getLogger(logger_name)
     discord_logger.setLevel(logging.ERROR)
 
 # Global variables
-discord_bot = None
-error_channel = None
-inbox_channel = None
+http_client = None
+error_channel_id = None
+inbox_channel_id = None
 error_queue = None
 contact_queue = None
 _bot_initialized = False  # Flag to prevent multiple initializations
@@ -39,71 +40,56 @@ def _get_discord_loop():
 
 def setup_discord_bot():
     """Initialize and setup the Discord bot only once"""
-    global discord_bot, error_channel, inbox_channel, error_queue, contact_queue, _bot_initialized
+    global http_client, error_channel_id, inbox_channel_id, error_queue, contact_queue, _bot_initialized
     if _bot_initialized:
         logger.info("Discord bot already initialized, skipping setup")
-        return discord_bot
+        return http_client
 
     discord_token = os.environ.get("DISCORD_TOKEN")
-    channel_id = os.environ.get("DISCORD_CHANNEL_ID")
+    error_channel_id = os.environ.get("DISCORD_CHANNEL_ID")
     inbox_channel_id = os.environ.get("DISCORD_INBOX_CHANNEL_ID")
 
     if not discord_token:
         logger.warning("DISCORD_TOKEN not found, Discord bot disabled")
         return None
 
-    intents = discord.Intents.none()
-    intents.guilds = True
-    intents.guild_messages = True
-    discord_bot = discord.Client(intents=intents)
-
+    http_client = httpx.AsyncClient()
     # Initialize queues only once
     error_queue = asyncio.Queue()
     contact_queue = asyncio.Queue()
 
-    @discord_bot.event
-    async def on_ready():
-        global error_channel, inbox_channel
-        logger.info(f"Logged in as {discord_bot.user.name} ({discord_bot.user.id})")
+    async def send_initial_messages():
+        if error_channel_id:
+            embed = discord.Embed(
+                title="📢 Error Monitoring Bot Connected",
+                description="SoftTouch error monitor is now online.",
+                color=0x2ecc71,
+                timestamp=datetime.now()
+            ).set_footer(text="Error Monitor").set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
+            await send_embed_to_channel(error_channel_id, embed, discord_token)
+            logger.info(f"Error channel set: {error_channel_id}")
+        else:
+            logger.warning("Error channel not found")
 
-        # Set error channel
-        if channel_id:
-            error_channel = discord_bot.get_channel(int(channel_id)) or await discord_bot.fetch_channel(int(channel_id))
-            if error_channel:
-                logger.info(f"Error channel set: {error_channel.name}")
-                await error_channel.send(embed=discord.Embed(
-                    title="📢 Error Monitoring Bot Connected",
-                    description="SoftTouch error monitor is now online.",
-                    color=0x2ecc71,
-                    timestamp=datetime.now()
-                ).set_footer(text="Error Monitor").set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96"))
-            else:
-                logger.warning("Error channel not found")
-
-        # Set inbox channel
         if inbox_channel_id:
-            inbox_channel = discord_bot.get_channel(int(inbox_channel_id)) or await discord_bot.fetch_channel(int(inbox_channel_id))
-            if inbox_channel:
-                logger.info(f"Inbox channel set: {inbox_channel.name}")
-                await inbox_channel.send(embed=discord.Embed(
-                    title="📬 Contact Bot Connected",
-                    description="SoftTouch contact form system is now online.",
-                    color=0x3498db,
-                    timestamp=datetime.now()
-                ).set_footer(text="Inbox Channel").set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96"))
-            else:
-                logger.warning("Inbox channel not found")
-
-        # Start queue processors
-        asyncio.create_task(process_error_queue())
-        asyncio.create_task(process_contact_queue())
+            embed = discord.Embed(
+                title="📬 Contact Bot Connected",
+                description="SoftTouch contact form system is now online.",
+                color=0x3498db,
+                timestamp=datetime.now()
+            ).set_footer(text="Inbox Channel").set_thumbnail(url="https://cdn.discordapp.com/emojis/736613075517603911.png?size=96")
+            await send_embed_to_channel(inbox_channel_id, embed, discord_token)
+            logger.info(f"Inbox channel set: {inbox_channel_id}")
+        else:
+            logger.warning("Inbox channel not found")
 
     async def process_error_queue():
         while True:
             try:
                 error_data = await asyncio.wait_for(error_queue.get(), timeout=1.0)
-                if error_channel:
-                    await error_channel.send(embed=create_error_embed(error_data))
+                if error_channel_id:
+                    embed = create_error_embed(error_data)
+                    await send_embed_to_channel(error_channel_id, embed, discord_token)
                 error_queue.task_done()
             except asyncio.TimeoutError:
                 await asyncio.sleep(0.1)
@@ -112,22 +98,44 @@ def setup_discord_bot():
         while True:
             try:
                 contact_data = await asyncio.wait_for(contact_queue.get(), timeout=1.0)
-                if inbox_channel:
-                    await inbox_channel.send(embed=create_contact_embed(contact_data))
+                if inbox_channel_id:
+                    embed = create_contact_embed(contact_data)
+                    await send_embed_to_channel(inbox_channel_id, embed, discord_token)
                 contact_queue.task_done()
             except asyncio.TimeoutError:
                 await asyncio.sleep(0.1)
 
-    def run_discord_bot():
+    def run_initial_setup():
         loop = _get_discord_loop()
-        future = asyncio.run_coroutine_threadsafe(discord_bot.start(discord_token), loop)
-        future.add_done_callback(lambda fut: logger.error(f"Discord bot error: {fut.exception()}", exc_info=True) if fut.exception() else None)
+        asyncio.run_coroutine_threadsafe(send_initial_messages(), loop)
+        asyncio.run_coroutine_threadsafe(process_error_queue(), loop)
+        asyncio.run_coroutine_threadsafe(process_contact_queue(), loop)
 
-    bot_thread = threading.Thread(target=run_discord_bot, daemon=True)
-    bot_thread.start()
+    setup_thread = threading.Thread(target=run_initial_setup, daemon=True)
+    setup_thread.start()
     _bot_initialized = True
     logger.info("Discord bot initialized")
-    return discord_bot
+    return http_client
+
+async def send_embed_to_channel(channel_id, embed, token):
+    """Send an embed to a Discord channel using HTTP"""
+    async with httpx.AsyncClient() as client:
+        payload = {
+            "embeds": [embed.to_dict()]
+        }
+        headers = {
+            "Authorization": f"Bot {token}",
+            "Content-Type": "application/json"
+        }
+        try:
+            response = await client.post(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                json=payload,
+                headers=headers
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Failed to send message to channel {channel_id}: {e}")
 
 def create_error_embed(error_data):
     embed = discord.Embed(
@@ -160,14 +168,14 @@ def create_contact_embed(contact_data):
     return embed
 
 def send_error_to_discord(error_info):
-    if not discord_bot or not error_channel or not error_queue:
+    if not http_client or not error_channel_id or not error_queue:
         logger.warning("Discord bot or channel not ready for error reporting")
         return
     loop = _get_discord_loop()
     asyncio.run_coroutine_threadsafe(error_queue.put(error_info), loop)
 
 def send_contact_to_discord(contact_info):
-    if not discord_bot or not inbox_channel or not contact_queue:
+    if not http_client or not inbox_channel_id or not contact_queue:
         logger.warning("Discord bot or channel not ready for contact reporting")
         return
     loop = _get_discord_loop()

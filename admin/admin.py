@@ -524,67 +524,98 @@ def hide_in_stats(endpoint_id: str):
     finally:
         session.close()
 
-# Statistics Routes
-@admin_bp.route('/stats', methods=['GET'])
-def get_statistics():
+@admin_bp.route('/endpoints/show-all-in-stats', methods=['POST'])
+def show_all_in_stats():
     auth_response = check_admin_auth()
     if auth_response:
         return auth_response
     session = Session()
     try:
-        stats = session.query(Statistic).first()
-        visible_endpoints = session.query(ApiEndpoint).filter_by(is_visible_in_stats=True).all()
-        visible_names = {e.name for e in visible_endpoints}
-        apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_names)).all()
-        if not stats:
-            stats = Statistic(total_requests=0, unique_users=0)
-            session.add(stats)
-            session.commit()
-        api_stats = [
-            ApiStatSchema(
-                name=api.name,
-                daily_requests=api.daily_requests,
-                weekly_requests=api.weekly_requests,
-                monthly_requests=api.monthly_requests,
-                average_response_time=api.average_response_time,
-                success_rate=api.success_rate,
-                popularity=api.popularity
-            ).model_dump(by_alias=True) for api in apis
+        endpoints = session.query(ApiEndpoint).all()
+        if not endpoints:
+            return jsonify({"message": "No endpoints found"}), 404
+        
+        updated_count = 0
+        for endpoint in endpoints:
+            if not endpoint.is_visible_in_stats:
+                endpoint.is_visible_in_stats = True
+                updated_count += 1
+        
+        if updated_count == 0:
+            return jsonify({"message": "All endpoints are already visible in stats"})
+        
+        session.commit()
+        
+        response_data = [
+            ApiEndpointSchema(
+                id=e.id,
+                name=e.name,
+                method=e.method,
+                endpoint=e.endpoint,
+                response_type=e.response_type,
+                part_description=e.part_description,
+                description=e.description,
+                params=json.loads(e.params),
+                sample_request=json.loads(e.sample_request) if e.sample_request else None,
+                sample_response=json.loads(e.sample_response) if e.sample_response else None,
+                enabled=e.enabled,
+                is_visible_in_stats=e.is_visible_in_stats
+            ).model_dump() for e in endpoints
         ]
+        
         return jsonify({
-            "totalRequests": stats.total_requests,
-            "uniqueUsers": stats.unique_users,
-            "timestamp": stats.timestamp.isoformat() if stats.timestamp else datetime.utcnow().isoformat(),
-            "apis": api_stats
+            "message": f"Successfully set {updated_count} endpoints visible in stats",
+            "endpoints": response_data
         })
+    except json.JSONDecodeError as e:
+        return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()
 
-@admin_bp.route('/stats/api/<api_name>', methods=['GET'])
-def get_api_stats(api_name: str):
+@admin_bp.route('/endpoints/hide-all-from-stats', methods=['POST'])
+def hide_all_from_stats():
     auth_response = check_admin_auth()
     if auth_response:
         return auth_response
     session = Session()
     try:
-        endpoint = session.query(ApiEndpoint).filter_by(name=api_name).first()
-        if not endpoint or not endpoint.is_visible_in_stats:
-            return jsonify({"error": "API stats not found or not visible"}), 404
-        api_stat = session.query(ApiStat).filter_by(name=api_name).first()
-        if api_stat:
-            response_data = ApiStatSchema(
-                name=api_stat.name,
-                daily_requests=api_stat.daily_requests,
-                weekly_requests=api_stat.weekly_requests,
-                monthly_requests=api_stat.monthly_requests,
-                average_response_time=api_stat.average_response_time,
-                success_rate=api_stat.success_rate,
-                popularity=api_stat.popularity
-            )
-            return jsonify({
-                "api": response_data.model_dump(by_alias=True),
-                "timestamp": datetime.datetime.utcnow().isoformat()
-            })
-        return jsonify({"error": "API stats not found"}), 404
+        endpoints = session.query(ApiEndpoint).all()
+        if not endpoints:
+            return jsonify({"message": "No endpoints found"}), 404
+        
+        updated_count = 0
+        for endpoint in endpoints:
+            if endpoint.is_visible_in_stats:
+                endpoint.is_visible_in_stats = False
+                updated_count += 1
+        
+        if updated_count == 0:
+            return jsonify({"message": "All endpoints are already hidden from stats"})
+        
+        session.commit()
+        
+        response_data = [
+            ApiEndpointSchema(
+                id=e.id,
+                name=e.name,
+                method=e.method,
+                endpoint=e.endpoint,
+                response_type=e.response_type,
+                part_description=e.part_description,
+                description=e.description,
+                params=json.loads(e.params),
+                sample_request=json.loads(e.sample_request) if e.sample_request else None,
+                sample_response=json.loads(e.sample_response) if e.sample_response else None,
+                enabled=e.enabled,
+                is_visible_in_stats=e.is_visible_in_stats
+            ).model_dump() for e in endpoints
+        ]
+        
+        return jsonify({
+            "message": f"Successfully hid {updated_count} endpoints from stats",
+            "endpoints": response_data
+        })
+    except json.JSONDecodeError as e:
+        return jsonify({"error": "Invalid JSON in database"}), 500
     finally:
         session.close()

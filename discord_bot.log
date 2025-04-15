@@ -1,0 +1,7 @@
+2025-04-15 10:37:48,921 - DEBUG - Environment variables - DISCORD_TOKEN: set, ERROR_CHANNEL_ID: 1357760072394084483, INBOX_CHANNEL_ID: 1357787853375016981
+2025-04-15 10:37:48,927 - INFO - Discord bot initialized
+2025-04-15 10:37:48,927 - DEBUG - Bot state - http_client: <httpx._client.AsyncClient object at 0x713a0bbe8980>, error_queue: <Queue maxsize=0>, contact_queue: <Queue maxsize=0>, bot_initialized: True
+2025-04-15 10:37:48,927 - INFO - Starting queue processing thread
+2025-04-15 10:37:48,927 - DEBUG - Starting queue processing thread
+2025-04-15 10:37:48,930 - DEBUG - Queue processing loop running
+2025-04-15 10:37:51,032 - DEBUG - Queue processing loop running

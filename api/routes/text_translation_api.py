@@ -5,14 +5,13 @@ from typing import Tuple, Optional
 import time
 
 translate_api = Blueprint('translate_api', __name__)
-
-# Initialize translator
 translator = Translator()
 
-# Constants
+
 VALID_LANGUAGES = set(LANGUAGES.keys())
 MAX_BATCH_SIZE = 50
 MAX_TEXT_LENGTH = 5000
+
 
 def sanitize_text(text: str) -> str:
     """Sanitize input text by removing excessive whitespace."""
@@ -36,7 +35,7 @@ def validate_language(lang: str) -> Tuple[bool, str]:
         return False, f"Unsupported ISO 639-1 language code: {lang}. Supported codes: {', '.join(sorted(VALID_LANGUAGES))}"
     return True, lang
 
-@translate_api.route('/translate', methods=['POST'])
+@translate_api.route('/v1/translate', methods=['POST'])
 def translate_text():
     """Translate text to a target language."""
     data = request.get_json(silent=True)
@@ -139,7 +138,8 @@ def translate_text():
 
     return jsonify(response), 200
 
-@translate_api.route('/translate/detect', methods=['POST'])
+
+@translate_api.route('/v1/translate/detect', methods=['POST'])
 def detect_language():
     """Detect the language of input text."""
     data = request.get_json(silent=True)
@@ -182,3 +182,4 @@ def detect_language():
         'character_count': len(sanitized_text),
         'total_processing_time': round(processing_time, 3)
     }), 200
+

@@ -29,7 +29,7 @@ VALID_STYLES = {
     'gapped_square': 'gapped_square',
     'vertical_bars': 'vertical_bars',
     'horizontal_bars': 'horizontal_bars',
-    'rounded_border': 'square'  # Handled separately for outer border
+    'rounded_border': 'square'
 }
 MAX_FILE_SIZE = 5 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif'}
@@ -43,6 +43,7 @@ def validate_format(output_format: str) -> Tuple[bool, str]:
         return False, f"Unsupported format: {output_format}. Use {', '.join(VALID_FORMATS)}."
     return True, output_format
 
+
 def validate_style(style: str) -> Tuple[bool, str]:
     """Validate QR style."""
     if not isinstance(style, str):
@@ -52,6 +53,7 @@ def validate_style(style: str) -> Tuple[bool, str]:
         return False, f"Unsupported style: {style}. Use {', '.join(VALID_STYLES.keys())}."
     return True, style
 
+
 def validate_color(color: str, field_name: str = "color") -> Tuple[bool, str]:
     """Validate hex color code."""
     if not isinstance(color, str):
@@ -59,6 +61,7 @@ def validate_color(color: str, field_name: str = "color") -> Tuple[bool, str]:
     if not re.match(r'^#(?:[0-9a-fA-F]{3}){1,2}$', color):
         return False, f"Invalid {field_name}: {color}. Use hex code (e.g., '#FF0000')."
     return True, color
+
 
 def validate_integer(value: any, field_name: str, min_val: int, max_val: int) -> Tuple[bool, int]:
     """Validate integer within range."""
@@ -71,6 +74,7 @@ def validate_integer(value: any, field_name: str, min_val: int, max_val: int) ->
         return True, val
     except (ValueError, TypeError):
         return False, f"{field_name} must be a valid integer."
+
 
 def apply_rounded_border(image: Image.Image, radius: int = 40) -> Image.Image:
     """Apply a rounded border to the image."""
@@ -85,11 +89,13 @@ def apply_rounded_border(image: Image.Image, radius: int = 40) -> Image.Image:
     output.paste(image, (0, 0), mask)
     return output
 
+
 def calculate_box_size(qr: qrcode.QRCode, resolution: int) -> int:
     """Calculate box_size based on desired resolution and QR module count."""
     module_count = qr.modules_count + 2 * qr.border
     box_size = max(1, resolution // module_count)
     return box_size
+
 
 def generate_svg_qr(qr: qrcode.QRCode, style: str, fill_color: str, back_color: str, resolution: int) -> str:
     """Generate SVG QR code with specified style."""
@@ -125,6 +131,7 @@ def generate_svg_qr(qr: qrcode.QRCode, style: str, fill_color: str, back_color: 
                     dwg.add(dwg.rect(insert=(pos_x, pos_y), size=(box_size, box_size), fill=fill_color))
 
     return dwg.tostring()
+
 
 def generate_qr_image(data: str, output_format: str, style: str, fill_color: str, back_color: str, 
                     resolution: int, border: int, image_file: Optional[object] = None) -> Tuple[object, str, Optional[Image.Image]]:
@@ -195,7 +202,8 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
         output.seek(0)
         return output, mime_type, qr_img
 
-@qr_api.route('/generate', methods=['POST'])
+
+@qr_api.route('/v1/generate', methods=['POST'])
 def generate_qr():
     """
     Generate and return a stylized QR code with specified resolution, either as a file or raw SVG/JSON.

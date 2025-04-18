@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, Response, g
 from flask_cors import CORS
-import api.v1 as api
+import api.routes as api
 from pydantic import BaseModel, ValidationError, EmailStr
 import admin.admin as admin
 from utils.discord_bot import setup_discord_bot, send_error_to_discord, send_contact_to_discord 

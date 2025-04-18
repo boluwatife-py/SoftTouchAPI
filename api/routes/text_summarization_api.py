@@ -69,7 +69,7 @@ def validate_input(text: Optional[str], num_sentences: Optional[int]) -> Tuple[b
         return False, "Number of sentences must be between 1 and 100"
     return True, ""
 
-@summarize_api.route('/summarize', methods=['POST'])
+@summarize_api.route('/v1/summarize', methods=['POST'])
 def summarize_text():
     """
     Summarize input text with enhanced scoring.

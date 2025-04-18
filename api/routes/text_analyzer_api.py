@@ -28,6 +28,7 @@ def preprocess_text(text: str) -> str:
     except Exception as e:
         raise ValueError(f"Text preprocessing failed: {str(e)}")
 
+
 def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
     """Extract top keywords based on frequency."""
     try:
@@ -38,6 +39,7 @@ def extract_keywords(text: str, num_keywords: int = 5) -> List[str]:
         return [word for word, _ in Counter(words).most_common(min(num_keywords, len(set(words))))]
     except Exception as e:
         raise RuntimeError(f"Keyword extraction failed: {str(e)}")
+
 
 def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, str]:
     """Validate input text."""
@@ -53,7 +55,7 @@ def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, 
         return False, f"Input validation error: {str(e)}"
 
 
-@text_api.route('/analyze', methods=['POST'])
+@text_api.route('/v1/analyze', methods=['POST'])
 def analyze_text():
     """
     Analyze text for entities, keywords, word count, and POS tags.
@@ -120,7 +122,7 @@ def analyze_text():
         return jsonify({'error': str(ve)}), 400
     
 
-@text_api.route('/sentiment', methods=['POST'])
+@text_api.route('/v1/sentiment', methods=['POST'])
 def sentiment_analysis():
     """
     Analyze text sentiment (polarity only; subjectivity is placeholder).

@@ -8,13 +8,12 @@ from typing import Optional
 
 transcribe_api = Blueprint('transcribe_api', __name__)
 
-# Define model path (optional custom cache directory)
-MODEL_NAME = "small"
-MODEL_CACHE_DIR = "whisper_model"  # Custom directory to store the model
 
-# Load Whisper model with error handling
+MODEL_NAME = "small"
+MODEL_CACHE_DIR = "whisper_model"
+
+
 try:
-    # Ensure the cache directory exists
     os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
     model = whisper.load_model(MODEL_NAME, download_root=MODEL_CACHE_DIR)
 except Exception as e:
@@ -38,7 +37,7 @@ def validate_input(file: Optional[object], language: Optional[str] = None) -> tu
     except Exception as e:
         return False, f"Input validation error: {str(e)}"
 
-@transcribe_api.route('/transcribe', methods=['POST'])
+@transcribe_api.route('/v1/transcribe', methods=['POST'])
 def api_transcribe():
     """
     API endpoint to transcribe audio to text using Whisper.

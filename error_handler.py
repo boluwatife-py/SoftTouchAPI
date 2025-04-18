@@ -3,18 +3,30 @@ import traceback
 import sys
 from flask import request, jsonify, render_template
 
-
 def configure_error_handlers(app, discord_callback):
-    """Configure Flask error handlers with Discord notification for server errors only"""
+    """Configure Flask error handlers with Discord notification for server errors and CORS headers"""
     
+    def add_cors_headers(response):
+        """Helper function to add CORS headers to a response"""
+        if request.path.startswith('/api'):
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        elif request.path.startswith('/admin'):
+            frontend_origin = app.config.get('FRONTEND_ADMIN_URL', 'http://localhost:5173')
+            response.headers['Access-Control-Allow-Origin'] = frontend_origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Expose-Headers'] = 'Authorization'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        return response
+
     @app.errorhandler(Exception)
     def handle_exception(e):
         """Global exception handler for uncaught exceptions (server errors)"""
-        # Get exception details
         exc_type, exc_value, exc_traceback = sys.exc_info()
         exception_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         
-        # Prepare error information for Discord
         error_info = {
             'error_type': exc_type.__name__ if exc_type else type(e).__name__,
             'message': str(e),
@@ -27,53 +39,61 @@ def configure_error_handlers(app, discord_callback):
         }
         
         print(e)
-        # Send to Discord if callback is provided (only for server errors)
         if discord_callback:
             discord_callback(error_info)
         else:
             print("Discord integration disabled, error not sent to Discord")
 
-        return jsonify({
+        response = jsonify({
             'error': 'Internal Server Error',
             'message': str(e) if app.debug else 'An unexpected error occurred'
-        }), 500
+        })
+        response.status_code = 500
+        return add_cors_headers(response)
     
     @app.errorhandler(400)
     def bad_request(e):
         """Handle 400 Bad Request errors (client-side, no Discord notification)"""
-        return jsonify({
+        response = jsonify({
             'error': 'Bad Request',
             'message': str(e) if app.debug else 'The request was invalid or malformed'
-        }), 400
+        })
+        response.status_code = 400
+        return add_cors_headers(response)
     
     @app.errorhandler(403)
     def forbidden(e):
         """Handle 403 Forbidden errors (client-side, no Discord notification)"""
-        return jsonify({
+        response = jsonify({
             'error': 'Forbidden',
             'message': str(e) if app.debug else 'You do not have permission to access this resource'
-        }), 403
+        })
+        response.status_code = 403
+        return add_cors_headers(response)
     
     @app.errorhandler(404)
     def page_not_found(e):
         """Handle 404 Not Found errors (client-side, no Discord notification)"""
-        return jsonify({
+        response = jsonify({
             'error': 'Not Found',
             'message': f"The requested URL {request.path} was not found"
-        }), 404
+        })
+        response.status_code = 404
+        return add_cors_headers(response)
     
     @app.errorhandler(405)
     def method_not_allowed(e):
         """Handle 405 Method Not Allowed errors (client-side, no Discord notification)"""
-        return jsonify({
+        response = jsonify({
             'error': 'Method Not Allowed',
             'message': str(e) if app.debug else f"Method {request.method} is not allowed for {request.path}"
-        }), 405
+        })
+        response.status_code = 405
+        return add_cors_headers(response)
     
     @app.errorhandler(500)
     def internal_server_error(e):
         """Handle 500 Internal Server Error (explicit 500, with Discord notification)"""
-        # Get exception details
         exc_type, exc_value, exc_traceback = sys.exc_info()
         exception_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
         
@@ -93,10 +113,12 @@ def configure_error_handlers(app, discord_callback):
         else:
             print("Discord integration disabled, 500 error not sent to Discord")
         
-        return jsonify({
+        response = jsonify({
             'error': 'Internal Server Error',
             'message': str(e) if app.debug else 'An unexpected error occurred'
-        }), 500
+        })
+        response.status_code = 500
+        return add_cors_headers(response)
     
     @app.errorhandler(502)
     def bad_gateway(e):
@@ -116,10 +138,12 @@ def configure_error_handlers(app, discord_callback):
         else:
             print("Discord integration disabled, 502 error not sent to Discord")
         
-        return jsonify({
+        response = jsonify({
             'error': 'Bad Gateway',
             'message': str(e) if app.debug else 'The server received an invalid response from an upstream server'
-        }), 502
+        })
+        response.status_code = 502
+        return add_cors_headers(response)
     
     @app.errorhandler(503)
     def service_unavailable(e):
@@ -139,7 +163,9 @@ def configure_error_handlers(app, discord_callback):
         else:
             print("Discord integration disabled, 503 error not sent to Discord")
         
-        return jsonify({
+        response = jsonify({
             'error': 'Service Unavailable',
             'message': str(e) if app.debug else 'The server is temporarily unavailable'
-        }), 503
+        })
+        response.status_code = 503
+        return add_cors_headers(response)

@@ -7,7 +7,8 @@ from utils.discord_bot import setup_discord_bot, send_error_to_discord, send_con
 from error_handler import configure_error_handlers
 from dotenv import load_dotenv
 import os, logging, json, time
-from datetime import datetime, timedelta, timezone
+import datetime as dt
+from datetime import datetime, timedelta
 from shared.database import get_db, Session, ApiEndpoint, Statistic, RequestLog, ApiStat
 from shared.schema import ApiEndpointSchema
 
@@ -20,15 +21,28 @@ logger = logging.getLogger(__name__)
 # INITIALIZE APP
 app = Flask(__name__)
 
+# Discord and Environment Setup
+discord_token = os.getenv("DISCORD_TOKEN")
+app.config['DISCORD_TOKEN'] = discord_token
+
+if discord_token:
+    configure_error_handlers(app, send_error_to_discord)
+else:
+    configure_error_handlers(app, None)
+
 frontend_origin = os.getenv("FRONTEND_ADMIN_URL", "http://localhost:5173")
 CORS(app, resources={
     r"/admin/*": {
         "origins": [frontend_origin],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "supports_credentials": True,
         "expose_headers": ["Authorization"],
+        "allow_headers": ["Content-Type", "Authorization"]
     },
     r"/*": {
-        "origins": "*"
+        "origins": ["*"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
@@ -54,12 +68,12 @@ def update_summary_stats():
         total_requests = len(request_logs)
         
         if not stat:
-            stat = Statistic(id=1, total_requests=total_requests, unique_users=unique_users, timestamp=datetime.now(timezone.UTC))
+            stat = Statistic(id=1, total_requests=total_requests, unique_users=unique_users, timestamp=datetime.now(dt.UTC))
             session.add(stat)
         else:
             stat.total_requests = total_requests
             stat.unique_users = unique_users
-            stat.timestamp = datetime.now(timezone.UTC)
+            stat.timestamp = datetime.now(dt.UTC)
         
         session.commit()
     finally:
@@ -69,7 +83,7 @@ def update_api_stats(api_name, response_time, status_code):
     session = Session()
     try:
         api = session.query(ApiStat).filter_by(name=api_name).first()
-        current_time = datetime.now(timezone.UTC)
+        current_time = datetime.now(dt.UTC)
         success = status_code < 400
         
         if api:
@@ -78,6 +92,10 @@ def update_api_stats(api_name, response_time, status_code):
             monthly_requests = api.monthly_requests + 1
             
             last_updated = api.last_updated or current_time
+            # Ensure last_updated is offset-aware
+            if last_updated.tzinfo is None:
+                last_updated = last_updated.replace(tzinfo=dt.UTC)
+            
             reset_daily = current_time.date() > last_updated.date()
             reset_weekly = current_time - last_updated > timedelta(weeks=1)
             reset_monthly = current_time - last_updated > timedelta(days=30)
@@ -143,26 +161,26 @@ def after_request(response):
                 client_ip=g.client_ip,
                 response_time=response_time,
                 status_code=response.status_code,
-                timestamp=datetime.now(timezone.UTC)
+                timestamp=datetime.now(dt.UTC)
             )
             session.add(request_log)
             session.commit()
             
             update_api_stats(request.path, response_time, response.status_code)
             update_summary_stats()
+        except Exception as e:
+            logger.error(f"Error in after_request: {str(e)}")
+            session.rollback()
         finally:
             session.close()
     
+    # Ensure CORS headers for /api/* routes
+    if request.path.startswith('/api'):
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    
     return response
-
-# Discord and Environment Setup
-discord_token = os.getenv("DISCORD_TOKEN")
-app.config['DISCORD_TOKEN'] = discord_token
-
-if discord_token:
-    configure_error_handlers(app, send_error_to_discord)
-else:
-    configure_error_handlers(app, None)
 
 API_URL = os.getenv('API_URL')
 
@@ -172,7 +190,26 @@ app.register_blueprint(api.translate_api, url_prefix='/api/text')
 app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
-# app.register_blueprint(api.transcribe_api, url_prefix='/api/text')
+
+# Dynamic Endpoint Handler
+@app.route('/api/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
+def dynamic_endpoint(path):
+    if request.method == 'OPTIONS':
+        return '', 204
+    session = Session()
+    try:
+        endpoint = session.query(ApiEndpoint).filter_by(endpoint=f"/api/{path}", enabled=True).first()
+        if not endpoint:
+            response = jsonify({"error": "Endpoint not found"})
+            response.status_code = 404
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            return response
+        # Placeholder for dynamic endpoint logic
+        return jsonify({"result": f"Dynamic endpoint: /api/{path}"})
+    finally:
+        session.close()
 
 # Statistics Endpoint
 @app.route('/statistics', methods=['GET'])
@@ -187,7 +224,7 @@ def statistics_endpoints():
         stats = {
             "totalRequests": stat.total_requests if stat else 0,
             "uniqueUsers": stat.unique_users if stat else 0,
-            "timestamp": stat.timestamp.isoformat() if stat else datetime.now(timezone.UTC).isoformat(),
+            "timestamp": stat.timestamp.isoformat() if stat else datetime.now(dt.UTC).isoformat(),
             "apis": [
                 {
                     "name": api.name,
@@ -253,9 +290,9 @@ def get_enabled_endpoints():
                 "description": endpoint_data.description,
                 "params": [
                     {
-                        "name": p.name,           # Fixed: Use dot notation
-                        "type": p.type,           # Fixed: Use dot notation
-                        "description": p.description  # Fixed: Use dot notation
+                        "name": p.name,
+                        "type": p.type,
+                        "description": p.description
                     } for p in endpoint_data.params
                 ],
                 "sample_request": endpoint_data.sample_request
@@ -265,11 +302,14 @@ def get_enabled_endpoints():
         return jsonify(api_endpoints)
     except Exception as e:
         logger.error(f"Failed to retrieve enabled endpoints: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        response = jsonify({"error": "Internal server error"})
+        response.status_code = 500
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
     finally:
         session.close()
-
-
 
 class ContactForm(BaseModel):
     name: str
@@ -292,7 +332,12 @@ def submit_contact_form():
         return jsonify({'message': 'Form submitted successfully!'})
     
     except ValidationError as e:
-        return jsonify({'error': 'Invalid form data', 'details': e.errors()}), 400
+        response = jsonify({'error': 'Invalid form data', 'details': e.errors()})
+        response.status_code = 400
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
 
 setup_discord_bot()
 if __name__ == '__main__':

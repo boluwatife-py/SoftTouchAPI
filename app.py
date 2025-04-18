@@ -178,25 +178,6 @@ app.register_blueprint(api.summarize_api, url_prefix='/api/text')
 app.register_blueprint(api.qr_api, url_prefix='/api/qr')
 app.register_blueprint(api.text_api, url_prefix='/api/text')
 
-# Dynamic Endpoint Handler
-@app.route('/api/<path:path>', methods=['GET', 'POST', 'OPTIONS'])
-def dynamic_endpoint(path):
-    if request.method == 'OPTIONS':
-        return '', 204
-    session = Session()
-    try:
-        endpoint = session.query(ApiEndpoint).filter_by(endpoint=f"/api/{path}", enabled=True).first()
-        if not endpoint:
-            response = jsonify({"error": "Endpoint not found"})
-            response.status_code = 404
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-            return response
-        # Placeholder for dynamic endpoint logic
-        return jsonify({"result": f"Dynamic endpoint: /api/{path}"})
-    finally:
-        session.close()
 
 # Statistics Endpoint
 @app.route('/statistics', methods=['GET'])

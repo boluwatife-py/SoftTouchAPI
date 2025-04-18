@@ -182,4 +182,3 @@ def detect_language():
         'character_count': len(sanitized_text),
         'total_processing_time': round(processing_time, 3)
     }), 200
-

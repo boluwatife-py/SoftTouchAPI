@@ -24,7 +24,7 @@ CORS(app, supports_credentials=True, resources={
         "origins": [os.getenv("FRONTEND_ADMIN_URL")],
         "expose_headers": ["Authorization"]
     },
-    r"/*": {
+    r"/api/*": {
         "origins": ["*"]
     }
 })

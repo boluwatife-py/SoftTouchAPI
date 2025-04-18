@@ -1,13 +1,13 @@
 from flask import Flask, jsonify, request, Response, g
 from flask_cors import CORS
-import api.routes as api
+import api.v1 as api
 from pydantic import BaseModel, ValidationError, EmailStr
 import admin.admin as admin
 from utils.discord_bot import setup_discord_bot, send_error_to_discord, send_contact_to_discord 
 from error_handler import configure_error_handlers
 from dotenv import load_dotenv
 import os, logging, json, time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from shared.database import get_db, Session, ApiEndpoint, Statistic, RequestLog, ApiStat
 from shared.schema import ApiEndpointSchema
 
@@ -19,13 +19,16 @@ logger = logging.getLogger(__name__)
 
 # INITIALIZE APP
 app = Flask(__name__)
-CORS(app, supports_credentials=True, resources={
+
+frontend_origin = os.getenv("FRONTEND_ADMIN_URL", "http://localhost:5173")
+CORS(app, resources={
     r"/admin/*": {
-        "origins": [os.getenv("FRONTEND_ADMIN_URL")],
-        "expose_headers": ["Authorization"]
+        "origins": [frontend_origin],
+        "supports_credentials": True,
+        "expose_headers": ["Authorization"],
     },
-    r"/api/*": {
-        "origins": ["*"]
+    r"/*": {
+        "origins": "*"
     }
 })
 
@@ -51,12 +54,12 @@ def update_summary_stats():
         total_requests = len(request_logs)
         
         if not stat:
-            stat = Statistic(id=1, total_requests=total_requests, unique_users=unique_users, timestamp=datetime.utcnow())
+            stat = Statistic(id=1, total_requests=total_requests, unique_users=unique_users, timestamp=datetime.now(timezone.UTC))
             session.add(stat)
         else:
             stat.total_requests = total_requests
             stat.unique_users = unique_users
-            stat.timestamp = datetime.utcnow()
+            stat.timestamp = datetime.now(timezone.UTC)
         
         session.commit()
     finally:
@@ -66,7 +69,7 @@ def update_api_stats(api_name, response_time, status_code):
     session = Session()
     try:
         api = session.query(ApiStat).filter_by(name=api_name).first()
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.UTC)
         success = status_code < 400
         
         if api:
@@ -140,7 +143,7 @@ def after_request(response):
                 client_ip=g.client_ip,
                 response_time=response_time,
                 status_code=response.status_code,
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.UTC)
             )
             session.add(request_log)
             session.commit()
@@ -184,7 +187,7 @@ def statistics_endpoints():
         stats = {
             "totalRequests": stat.total_requests if stat else 0,
             "uniqueUsers": stat.unique_users if stat else 0,
-            "timestamp": stat.timestamp.isoformat() if stat else datetime.utcnow().isoformat(),
+            "timestamp": stat.timestamp.isoformat() if stat else datetime.now(timezone.UTC).isoformat(),
             "apis": [
                 {
                     "name": api.name,

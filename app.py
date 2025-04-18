@@ -30,21 +30,8 @@ if discord_token:
 else:
     configure_error_handlers(app, None)
 
-frontend_origin = os.getenv("FRONTEND_ADMIN_URL", "http://localhost:5173")
-CORS(app, resources={
-    r"/admin/*": {
-        "origins": [frontend_origin],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "supports_credentials": True,
-        "expose_headers": ["Authorization"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    },
-    r"/*": {
-        "origins": ["*"],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+
+CORS(app, origins=[os.getenv("FRONTEND_ADMIN_URL"), "*"], supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin", "User-Agent", "Referer", "Accept-Encoding", "Accept-Language"])
 
 # Database Setup
 DATABASE = 'api.db'

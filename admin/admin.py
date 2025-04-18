@@ -80,11 +80,16 @@ def login():
             
             token = jwt.encode({
                 'user_id': user.id,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.utcnow()+ datetime.timedelta(hours=24)
             }, SECRET_KEY, algorithm='HS256')
+
+            print(token)
             
-            response = jsonify({"id": user.id, "username": user.username})
-            response.headers['Authorization'] = f'Bearer {token}'
+            response = jsonify({
+                "id": user.id,
+                "username": user.username,
+                "token": token
+            })
             return response
         finally:
             session.close()
@@ -123,7 +128,7 @@ def get_endpoints():
         return jsonify({
             "endpoints": response_data,
             "count": len(endpoints),
-            "timestamp": datetime.datetime.utcnow().isoformat()
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat()
         })
     except json.JSONDecodeError as e:
         return jsonify({"error": "Invalid JSON in database"}), 500

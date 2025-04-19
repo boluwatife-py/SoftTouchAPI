@@ -1,171 +1,115 @@
 import logging
 import traceback
 import sys
-from flask import request, jsonify, render_template
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.status import (
+    HTTP_400_BAD_REQUEST,
+    HTTP_403_FORBIDDEN,
+    HTTP_404_NOT_FOUND,
+    HTTP_405_METHOD_NOT_ALLOWED,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+    HTTP_502_BAD_GATEWAY,
+    HTTP_503_SERVICE_UNAVAILABLE
+)
 
-def configure_error_handlers(app, discord_callback):
-    """Configure Flask error handlers with Discord notification for server errors and CORS headers"""
-    
-    def add_cors_headers(response):
-        """Helper function to add CORS headers to a response"""
-        if request.path.startswith('/api'):
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        elif request.path.startswith('/admin'):
-            frontend_origin = app.config.get('FRONTEND_ADMIN_URL', 'http://localhost:5173')
-            response.headers['Access-Control-Allow-Origin'] = frontend_origin
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-            response.headers['Access-Control-Expose-Headers'] = 'Authorization'
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-        return response
 
-    @app.errorhandler(Exception)
-    def handle_exception(e):
+logging.getLogger('uvicorn.error').setLevel(logging.CRITICAL)
+logging.getLogger('uvicorn.access').setLevel(logging.INFO)
+logger = logging.getLogger('error_handler')
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+def configure_error_handlers(app: FastAPI, discord_callback=None):
+    """Configure FastAPI error handlers with Discord notification for server errors and CORS headers"""
+    @app.exception_handler(Exception)
+    def handle_exception(request: Request, exc: Exception):
         """Global exception handler for uncaught exceptions (server errors)"""
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        exception_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        
+        exception_traceback = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         error_info = {
-            'error_type': exc_type.__name__ if exc_type else type(e).__name__,
-            'message': str(e),
-            'route': request.path,
+            'error_type': str(exc),
+            'message': str(exc),
+            'route': request.url.path,
             'method': request.method,
-            'status_code': 500,
+            'status_code': HTTP_500_INTERNAL_SERVER_ERROR,
             'traceback': exception_traceback,
-            'user_agent': request.headers.get('User-Agent'),
-            'remote_addr': request.remote_addr
+            'user_agent': request.headers.get('User-Agent', 'Unknown'),
+            'remote_addr': request.client.host if request.client else 'Unknown'
         }
         
-        print(e)
-        if discord_callback:
-            discord_callback(error_info)
-        else:
-            print("Discord integration disabled, error not sent to Discord")
+        sys.stderr = open('/dev/null', 'w')
+        try:
+            if discord_callback:
+                discord_callback(error_info)
+            else:
+                logger.debug("Discord integration disabled, error not sent to Discord")
+        finally:
+            sys.stderr = sys.__stderr__
 
-        response = jsonify({
-            'error': 'Internal Server Error',
-            'message': str(e) if app.debug else 'An unexpected error occurred'
-        })
-        response.status_code = 500
-        return add_cors_headers(response)
+        response = JSONResponse(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                'error': 'Internal Server Error',
+                'message': str(exc) if app.debug else 'An unexpected error occurred'
+            }
+        )
+        return response
     
-    @app.errorhandler(400)
-    def bad_request(e):
-        """Handle 400 Bad Request errors (client-side, no Discord notification)"""
-        response = jsonify({
-            'error': 'Bad Request',
-            'message': str(e) if app.debug else 'The request was invalid or malformed'
-        })
-        response.status_code = 400
-        return add_cors_headers(response)
-    
-    @app.errorhandler(403)
-    def forbidden(e):
-        """Handle 403 Forbidden errors (client-side, no Discord notification)"""
-        response = jsonify({
-            'error': 'Forbidden',
-            'message': str(e) if app.debug else 'You do not have permission to access this resource'
-        })
-        response.status_code = 403
-        return add_cors_headers(response)
-    
-    @app.errorhandler(404)
-    def page_not_found(e):
-        """Handle 404 Not Found errors (client-side, no Discord notification)"""
-        response = jsonify({
-            'error': 'Not Found',
-            'message': f"The requested URL {request.path} was not found"
-        })
-        response.status_code = 404
-        return add_cors_headers(response)
-    
-    @app.errorhandler(405)
-    def method_not_allowed(e):
-        """Handle 405 Method Not Allowed errors (client-side, no Discord notification)"""
-        response = jsonify({
-            'error': 'Method Not Allowed',
-            'message': str(e) if app.debug else f"Method {request.method} is not allowed for {request.path}"
-        })
-        response.status_code = 405
-        return add_cors_headers(response)
-    
-    @app.errorhandler(500)
-    def internal_server_error(e):
-        """Handle 500 Internal Server Error (explicit 500, with Discord notification)"""
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        exception_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        
-        error_info = {
-            'error_type': 'InternalServerError',
-            'message': str(e),
-            'route': request.path,
-            'method': request.method,
-            'status_code': 500,
-            'traceback': exception_traceback,
-            'user_agent': request.headers.get('User-Agent'),
-            'remote_addr': request.remote_addr
+    @app.exception_handler(HTTPException)
+    def http_exception_handler(request: Request, exc: HTTPException):
+        """Handle specific HTTP exceptions"""
+        status_code = exc.status_code
+        error_map = {
+            HTTP_400_BAD_REQUEST: 'Bad Request',
+            HTTP_403_FORBIDDEN: 'Forbidden',
+            HTTP_404_NOT_FOUND: 'Not Found',
+            HTTP_405_METHOD_NOT_ALLOWED: 'Method Not Allowed',
+            HTTP_500_INTERNAL_SERVER_ERROR: 'Internal Server Error',
+            HTTP_502_BAD_GATEWAY: 'Bad Gateway',
+            HTTP_503_SERVICE_UNAVAILABLE: 'Service Unavailable'
         }
         
-        if discord_callback:
-            discord_callback(error_info)
-        else:
-            print("Discord integration disabled, 500 error not sent to Discord")
-        
-        response = jsonify({
-            'error': 'Internal Server Error',
-            'message': str(e) if app.debug else 'An unexpected error occurred'
-        })
-        response.status_code = 500
-        return add_cors_headers(response)
-    
-    @app.errorhandler(502)
-    def bad_gateway(e):
-        """Handle 502 Bad Gateway errors (server-side, with Discord notification)"""
+        error_type = error_map.get(status_code, 'Unknown Error')
+        message = str(exc.detail) if app.debug else {
+            HTTP_400_BAD_REQUEST: 'The request was invalid or malformed',
+            HTTP_403_FORBIDDEN: 'You do not have permission to access this resource',
+            HTTP_404_NOT_FOUND: f"The requested URL {request.url.path} was not found",
+            HTTP_405_METHOD_NOT_ALLOWED: f"Method {request.method} is not allowed for {request.url.path}",
+            HTTP_500_INTERNAL_SERVER_ERROR: 'An unexpected error occurred',
+            HTTP_502_BAD_GATEWAY: 'The server received an invalid response from an upstream server',
+            HTTP_503_SERVICE_UNAVAILABLE: 'The server is temporarily unavailable'
+        }.get(status_code, 'An error occurred')
+
         error_info = {
-            'error_type': 'BadGateway',
-            'message': str(e),
-            'route': request.path,
+            'error_type': error_type,
+            'SDH': str(exc.detail),
+            'route': request.url.path,
             'method': request.method,
-            'status_code': 502,
-            'user_agent': request.headers.get('User-Agent'),
-            'remote_addr': request.remote_addr
+            'status_code': status_code,
+            'user_agent': request.headers.get('User-Agent', 'Unknown'),
+            'remote_addr': request.client.host if request.client else 'Unknown'
         }
         
-        if discord_callback:
-            discord_callback(error_info)
-        else:
-            print("Discord integration disabled, 502 error not sent to Discord")
-        
-        response = jsonify({
-            'error': 'Bad Gateway',
-            'message': str(e) if app.debug else 'The server received an invalid response from an upstream server'
-        })
-        response.status_code = 502
-        return add_cors_headers(response)
-    
-    @app.errorhandler(503)
-    def service_unavailable(e):
-        """Handle 503 Service Unavailable errors (server-side, with Discord notification)"""
-        error_info = {
-            'error_type': 'ServiceUnavailable',
-            'message': str(e),
-            'route': request.path,
-            'method': request.method,
-            'status_code': 503,
-            'user_agent': request.headers.get('User-Agent'),
-            'remote_addr': request.remote_addr
-        }
-        
-        if discord_callback:
-            discord_callback(error_info)
-        else:
-            print("Discord integration disabled, 503 error not sent to Discord")
-        
-        response = jsonify({
-            'error': 'Service Unavailable',
-            'message': str(e) if app.debug else 'The server is temporarily unavailable'
-        })
-        response.status_code = 503
-        return add_cors_headers(response)
+        if status_code in [HTTP_500_INTERNAL_SERVER_ERROR, HTTP_502_BAD_GATEWAY, HTTP_503_SERVICE_UNAVAILABLE]:
+            exception_traceback = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            error_info['traceback'] = exception_traceback
+            sys.stderr = open('/dev/null', 'w')
+            try:
+                if discord_callback:
+                    discord_callback(error_info)
+                else:
+                    logger.debug(f"Discord integration disabled, {status_code} error not sent to Discord")
+            finally:
+                sys.stderr = sys.__stderr__
+        response = JSONResponse(
+            status_code=status_code,
+            content={
+                'error': error_type,
+                'message': message
+            }
+        )
+        return response

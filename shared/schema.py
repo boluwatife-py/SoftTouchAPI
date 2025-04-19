@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Any
 import uuid
 
@@ -39,3 +39,10 @@ class StatisticsSchema(BaseModel):
 class InsertUser(BaseModel):
     username: str
     password: str
+
+
+class ContactForm(BaseModel):
+    name: str
+    email: EmailStr
+    message: str
+    subject: str

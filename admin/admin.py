@@ -1,5 +1,7 @@
-from flask import Blueprint, jsonify, request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from typing import Optional
 import datetime
 import json
 import jwt
@@ -9,8 +11,8 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import logging
-from shared.database import Session, User, ApiEndpoint, ApiStat, Statistic
-from shared.schema import ApiEndpointSchema, ApiStatSchema, InsertUser
+from shared.database import Session, User, ApiEndpoint
+from shared.schema import ApiEndpointSchema, InsertUser
 
 load_dotenv()
 
@@ -23,14 +25,14 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY must be set in .env file")
 
-# Create Blueprint
-admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+# Create APIRouter
+admin_router = APIRouter(tags=["admin"])
 
-# Authentication middleware
-def check_admin_auth():
+# Authentication dependency
+async def check_admin_auth(request: Request) -> Optional[dict]:
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify({"message": "Unauthorized"}), 401
+        raise HTTPException(status_code=401, detail={"message": "Unauthorized"})
     
     token = auth_header.split(' ')[1]
     try:
@@ -39,73 +41,61 @@ def check_admin_auth():
         try:
             user = session.query(User).filter_by(id=payload['user_id']).first()
             if not user:
-                return jsonify({"message": "User not found"}), 401
+                raise HTTPException(status_code=401, detail={"message": "User not found"})
             if not user.is_admin:
-                return jsonify({"message": "Admin access required"}), 403
-            request.user_id = payload['user_id']
-            return None
+                raise HTTPException(status_code=403, detail={"message": "Admin access required"})
+            return payload
         finally:
             session.close()
     except jwt.ExpiredSignatureError:
-        return jsonify({"message": "Token expired"}), 401
+        raise HTTPException(status_code=401, detail={"message": "Token expired"})
     except jwt.InvalidTokenError:
-        return jsonify({"message": "Invalid token"}), 401
+        raise HTTPException(status_code=401, detail={"message": "Invalid token"})
 
-@admin_bp.route('/user', methods=['GET'])
-def get_current_user():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.get("/user")
+async def get_current_user(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
-        user = session.query(User).filter_by(id=request.user_id).first()
+        user = session.query(User).filter_by(id=payload['user_id']).first()
         if user:
-            return jsonify({"id": user.id, "username": user.username})
-        return jsonify({"message": "User not found"}), 404
+            return {"id": user.id, "username": user.username}
+        raise HTTPException(status_code=404, detail={"message": "User not found"})
     finally:
         session.close()
 
-@admin_bp.route('/login', methods=['POST'])
-def login():
+@admin_router.post("/login")
+async def login(data: InsertUser):
+    session = Session()
     try:
-        data = InsertUser(**request.get_json())
-        session = Session()
-        try:
-            user = session.query(User).filter_by(username=data.username).first()
-            if not user:
-                return jsonify({"message": "Incorrect username"}), 401
-            
-            if not bcrypt.checkpw(data.password.encode('utf-8'), user.password.encode('utf-8')):
-                return jsonify({"message": "Incorrect password"}), 401
-            
-            token = jwt.encode({
-                'user_id': user.id,
-                'exp': datetime.datetime.utcnow()+ datetime.timedelta(hours=24)
-            }, SECRET_KEY, algorithm='HS256')
-
-            print(token)
-            
-            response = jsonify({
-                "id": user.id,
-                "username": user.username,
-                "token": token
-            })
-            return response
-        finally:
-            session.close()
+        user = session.query(User).filter_by(username=data.username).first()
+        if not user:
+            raise HTTPException(status_code=401, detail={"message": "Incorrect username"})
+        
+        if not bcrypt.checkpw(data.password.encode('utf-8'), user.password.encode('utf-8')):
+            raise HTTPException(status_code=401, detail={"message": "Incorrect password"})
+        
+        token = jwt.encode({
+            'user_id': user.id,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, SECRET_KEY, algorithm='HS256')
+        
+        return {
+            "id": user.id,
+            "username": user.username,
+            "token": token
+        }
     except ValidationError as e:
-        return jsonify({"message": "Validation failed", "details": e.errors()}), 400
+        raise HTTPException(status_code=400, detail={"message": "Validation failed", "details": e.errors()})
+    finally:
+        session.close()
 
-@admin_bp.route('/logout', methods=['POST'])
-def logout():
-    return '', 204
+@admin_router.post("/logout")
+async def logout():
+    return JSONResponse(status_code=204, content={})
 
 # API CRUD Operations
-@admin_bp.route('/endpoints', methods=['GET'])
-def get_endpoints():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.get("/endpoints")
+async def get_endpoints(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
@@ -125,21 +115,18 @@ def get_endpoints():
                 is_visible_in_stats=e.is_visible_in_stats
             ).model_dump() for e in endpoints
         ]
-        return jsonify({
+        return {
             "endpoints": response_data,
             "count": len(endpoints),
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat()
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/<endpoint_id>', methods=['GET'])
-def get_endpoint(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.get("/endpoints/{endpoint_id}")
+async def get_endpoint(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
@@ -158,142 +145,129 @@ def get_endpoint(endpoint_id: str):
                 enabled=endpoint.enabled,
                 is_visible_in_stats=endpoint.is_visible_in_stats
             )
-            return jsonify(response_data.model_dump())
-        return jsonify({"error": "Endpoint not found"}), 404
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+            return response_data.model_dump()
+        raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints', methods=['POST'])
-def create_endpoint():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints")
+async def create_endpoint(data: ApiEndpointSchema, payload: dict = Depends(check_admin_auth)):
+    session = Session()
     try:
-        data = ApiEndpointSchema(**request.get_json())
-        session = Session()
-        try:
-            new_endpoint = ApiEndpoint(
-                id=data.id,
-                name=data.name,
-                method=data.method,
-                endpoint=data.endpoint,
-                response_type=data.response_type,
-                part_description=data.part_description,
-                description=data.description,
-                params=json.dumps([p.model_dump() for p in data.params]),
-                sample_request=json.dumps(data.sample_request) if data.sample_request else None,
-                sample_response=json.dumps(data.sample_response) if data.sample_response else None,
-                enabled=data.enabled,
-                is_visible_in_stats=data.is_visible_in_stats
-            )
-            session.add(new_endpoint)
-            session.commit()
-            
-            response_data = ApiEndpointSchema(
-                id=new_endpoint.id,
-                name=new_endpoint.name,
-                method=new_endpoint.method,
-                endpoint=new_endpoint.endpoint,
-                response_type=new_endpoint.response_type,
-                part_description=new_endpoint.part_description,
-                description=new_endpoint.description,
-                params=json.loads(new_endpoint.params),
-                sample_request=json.loads(new_endpoint.sample_request) if new_endpoint.sample_request else None,
-                sample_response=json.loads(new_endpoint.sample_response) if new_endpoint.sample_response else None,
-                enabled=new_endpoint.enabled,
-                is_visible_in_stats=new_endpoint.is_visible_in_stats
-            )
-            return jsonify({
+        new_endpoint = ApiEndpoint(
+            id=data.id,
+            name=data.name,
+            method=data.method,
+            endpoint=data.endpoint,
+            response_type=data.response_type,
+            part_description=data.part_description,
+            description=data.description,
+            params=json.dumps([p.model_dump() for p in data.params]),
+            sample_request=json.dumps(data.sample_request) if data.sample_request else None,
+            sample_response=json.dumps(data.sample_response) if data.sample_response else None,
+            enabled=data.enabled,
+            is_visible_in_stats=data.is_visible_in_stats
+        )
+        session.add(new_endpoint)
+        session.commit()
+        
+        response_data = ApiEndpointSchema(
+            id=new_endpoint.id,
+            name=new_endpoint.name,
+            method=new_endpoint.method,
+            endpoint=new_endpoint.endpoint,
+            response_type=new_endpoint.response_type,
+            part_description=new_endpoint.part_description,
+            description=new_endpoint.description,
+            params=json.loads(new_endpoint.params),
+            sample_request=json.loads(new_endpoint.sample_request) if new_endpoint.sample_request else None,
+            sample_response=json.loads(new_endpoint.sample_response) if new_endpoint.sample_response else None,
+            enabled=new_endpoint.enabled,
+            is_visible_in_stats=new_endpoint.is_visible_in_stats
+        )
+        return JSONResponse(
+            status_code=201,
+            content={
                 "message": "Endpoint created successfully",
                 "endpoint": response_data.model_dump()
-            }), 201
-        finally:
-            session.close()
+            }
+        )
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in input"}), 400
+        raise HTTPException(status_code=400, detail={"error": "Validation failed", "details": e.errors()})
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail={"error": "Invalid JSON in input"})
+    finally:
+        session.close()
 
-@admin_bp.route('/endpoints/<endpoint_id>', methods=['PUT'])
-def update_endpoint(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.put("/endpoints/{endpoint_id}")
+async def update_endpoint(endpoint_id: str, data: ApiEndpointSchema, payload: dict = Depends(check_admin_auth)):
+    session = Session()
     try:
-        data = ApiEndpointSchema(**request.get_json())
-        session = Session()
-        try:
-            endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
-            if not endpoint:
-                return jsonify({"error": "Endpoint not found"}), 404
-            endpoint.name = data.name
-            endpoint.method = data.method
-            endpoint.endpoint = data.endpoint
-            endpoint.response_type = data.response_type
-            endpoint.part_description = data.part_description
-            endpoint.description = data.description
-            endpoint.params = json.dumps([p.model_dump() for p in data.params])
-            endpoint.sample_request = json.dumps(data.sample_request) if data.sample_request else None
-            endpoint.sample_response = json.dumps(data.sample_response) if data.sample_response else None
-            endpoint.enabled = data.enabled
-            endpoint.is_visible_in_stats = data.is_visible_in_stats
-            session.commit()
-            response_data = ApiEndpointSchema(
-                id=endpoint.id,
-                name=endpoint.name,
-                method=endpoint.method,
-                endpoint=endpoint.endpoint,
-                response_type=endpoint.response_type,
-                part_description=endpoint.part_description,
-                description=endpoint.description,
-                params=json.loads(endpoint.params),
-                sample_request=json.loads(endpoint.sample_request) if endpoint.sample_request else None,
-                sample_response=json.loads(endpoint.sample_response) if endpoint.sample_response else None,
-                enabled=endpoint.enabled,
-                is_visible_in_stats=endpoint.is_visible_in_stats
-            )
-            return jsonify({
-                "message": "Endpoint updated successfully",
-                "endpoint": response_data.model_dump()
-            })
-        finally:
-            session.close()
+        endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
+        if not endpoint:
+            raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
+        endpoint.name = data.name
+        endpoint.method = data.method
+        endpoint.endpoint = data.endpoint
+        endpoint.response_type = data.response_type
+        endpoint.part_description = data.part_description
+        endpoint.description = data.description
+        endpoint.params = json.dumps([p.model_dump() for p in data.params])
+        endpoint.sample_request = json.dumps(data.sample_request) if data.sample_request else None
+        endpoint.sample_response = json.dumps(data.sample_response) if data.sample_response else None
+        endpoint.enabled = data.enabled
+        endpoint.is_visible_in_stats = data.is_visible_in_stats
+        session.commit()
+        response_data = ApiEndpointSchema(
+            id=endpoint.id,
+            name=endpoint.name,
+            method=endpoint.method,
+            endpoint=endpoint.endpoint,
+            response_type=endpoint.response_type,
+            part_description=endpoint.part_description,
+            description=endpoint.description,
+            params=json.loads(endpoint.params),
+            sample_request=json.loads(endpoint.sample_request) if endpoint.sample_request else None,
+            sample_response=json.loads(endpoint.sample_response) if endpoint.sample_response else None,
+            enabled=endpoint.enabled,
+            is_visible_in_stats=endpoint.is_visible_in_stats
+        )
+        return {
+            "message": "Endpoint updated successfully",
+            "endpoint": response_data.model_dump()
+        }
     except ValidationError as e:
-        return jsonify({"error": "Validation failed", "details": e.errors()}), 400
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in input"}), 400
+        raise HTTPException(status_code=400, detail={"error": "Validation failed", "details": e.errors()})
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail={"error": "Invalid JSON in input"})
+    finally:
+        session.close()
 
-@admin_bp.route('/endpoints/<endpoint_id>', methods=['DELETE'])
-def delete_endpoint(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.delete("/endpoints/{endpoint_id}")
+async def delete_endpoint(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if endpoint:
             session.delete(endpoint)
             session.commit()
-            return jsonify({"message": "Endpoint deleted successfully"})
-        return jsonify({"error": "Endpoint not found"}), 404
+            return {"message": "Endpoint deleted successfully"}
+        raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
     finally:
         session.close()
 
 # Enable/Disable Endpoints
-@admin_bp.route('/endpoints/<endpoint_id>/enable', methods=['POST'])
-def enable_endpoint(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/{endpoint_id}/enable")
+async def enable_endpoint(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            return jsonify({"error": "Endpoint not found"}), 404
+            raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
         if endpoint.enabled:
-            return jsonify({"message": "Endpoint is already enabled"})
+            return {"message": "Endpoint is already enabled"}
         endpoint.enabled = True
         session.commit()
         response_data = ApiEndpointSchema(
@@ -310,27 +284,24 @@ def enable_endpoint(endpoint_id: str):
             enabled=endpoint.enabled,
             is_visible_in_stats=endpoint.is_visible_in_stats
         )
-        return jsonify({
+        return {
             "message": "Endpoint enabled successfully",
             "endpoint": response_data.model_dump()
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/<endpoint_id>/disable', methods=['POST'])
-def disable_endpoint(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/{endpoint_id}/disable")
+async def disable_endpoint(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            return jsonify({"error": "Endpoint not found"}), 404
+            raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
         if not endpoint.enabled:
-            return jsonify({"message": "Endpoint is already disabled"})
+            return {"message": "Endpoint is already disabled"}
         endpoint.enabled = False
         session.commit()
         response_data = ApiEndpointSchema(
@@ -347,26 +318,23 @@ def disable_endpoint(endpoint_id: str):
             enabled=endpoint.enabled,
             is_visible_in_stats=endpoint.is_visible_in_stats
         )
-        return jsonify({
+        return {
             "message": "Endpoint disabled successfully",
             "endpoint": response_data.model_dump()
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
 # Enable/Disable All Endpoints
-@admin_bp.route('/endpoints/enable-all', methods=['POST'])
-def enable_all_endpoints():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/enable-all")
+async def enable_all_endpoints(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            return jsonify({"message": "No endpoints found"}), 404
+            raise HTTPException(status_code=404, detail={"message": "No endpoints found"})
         
         updated_count = 0
         for endpoint in endpoints:
@@ -375,10 +343,9 @@ def enable_all_endpoints():
                 updated_count += 1
         
         if updated_count == 0:
-            return jsonify({"message": "All endpoints are already enabled"})
+            return {"message": "All endpoints are already enabled"}
         
         session.commit()
-        
         
         response_data = [
             ApiEndpointSchema(
@@ -397,25 +364,22 @@ def enable_all_endpoints():
             ).model_dump() for e in endpoints
         ]
         
-        return jsonify({
+        return {
             "message": f"Successfully enabled {updated_count} endpoints",
             "endpoints": response_data
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/disable-all', methods=['POST'])
-def disable_all_endpoints():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/disable-all")
+async def disable_all_endpoints(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            return jsonify({"message": "No endpoints found"}), 404
+            raise HTTPException(status_code=404, detail={"message": "No endpoints found"})
         
         updated_count = 0
         for endpoint in endpoints:
@@ -424,7 +388,7 @@ def disable_all_endpoints():
                 updated_count += 1
         
         if updated_count == 0:
-            return jsonify({"message": "All endpoints are already disabled"})
+            return {"message": "All endpoints are already disabled"}
         
         session.commit()
         
@@ -445,28 +409,25 @@ def disable_all_endpoints():
             ).model_dump() for e in endpoints
         ]
         
-        return jsonify({
+        return {
             "message": f"Successfully disabled {updated_count} endpoints",
             "endpoints": response_data
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
 # Show/Hide in Statistics
-@admin_bp.route('/endpoints/<endpoint_id>/stats/show', methods=['POST'])
-def show_in_stats(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/{endpoint_id}/stats/show")
+async def show_in_stats(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            return jsonify({"error": "Endpoint not found"}), 404
+            raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
         if endpoint.is_visible_in_stats:
-            return jsonify({"message": "Endpoint is already visible in stats"})
+            return {"message": "Endpoint is already visible in stats"}
         endpoint.is_visible_in_stats = True
         session.commit()
         response_data = ApiEndpointSchema(
@@ -483,27 +444,24 @@ def show_in_stats(endpoint_id: str):
             enabled=endpoint.enabled,
             is_visible_in_stats=endpoint.is_visible_in_stats
         )
-        return jsonify({
+        return {
             "message": "Endpoint set to visible in stats",
             "endpoint": response_data.model_dump()
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/<endpoint_id>/stats/hide', methods=['POST'])
-def hide_in_stats(endpoint_id: str):
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/{endpoint_id}/stats/hide")
+async def hide_in_stats(endpoint_id: str, payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoint = session.query(ApiEndpoint).filter_by(id=endpoint_id).first()
         if not endpoint:
-            return jsonify({"error": "Endpoint not found"}), 404
+            raise HTTPException(status_code=404, detail={"error": "Endpoint not found"})
         if not endpoint.is_visible_in_stats:
-            return jsonify({"message": "Endpoint is already hidden from stats"})
+            return {"message": "Endpoint is already hidden from stats"}
         endpoint.is_visible_in_stats = False
         session.commit()
         response_data = ApiEndpointSchema(
@@ -520,25 +478,22 @@ def hide_in_stats(endpoint_id: str):
             enabled=endpoint.enabled,
             is_visible_in_stats=endpoint.is_visible_in_stats
         )
-        return jsonify({
+        return {
             "message": "Endpoint hidden from stats",
             "endpoint": response_data.model_dump()
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/show-all-in-stats', methods=['POST'])
-def show_all_in_stats():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/show-all-in-stats")
+async def show_all_in_stats(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            return jsonify({"message": "No endpoints found"}), 404
+            raise HTTPException(status_code=404, detail={"message": "No endpoints found"})
         
         updated_count = 0
         for endpoint in endpoints:
@@ -547,7 +502,7 @@ def show_all_in_stats():
                 updated_count += 1
         
         if updated_count == 0:
-            return jsonify({"message": "All endpoints are already visible in stats"})
+            return {"message": "All endpoints are already visible in stats"}
         
         session.commit()
         
@@ -568,25 +523,22 @@ def show_all_in_stats():
             ).model_dump() for e in endpoints
         ]
         
-        return jsonify({
+        return {
             "message": f"Successfully set {updated_count} endpoints visible in stats",
             "endpoints": response_data
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()
 
-@admin_bp.route('/endpoints/hide-all-from-stats', methods=['POST'])
-def hide_all_from_stats():
-    auth_response = check_admin_auth()
-    if auth_response:
-        return auth_response
+@admin_router.post("/endpoints/hide-all-from-stats")
+async def hide_all_from_stats(payload: dict = Depends(check_admin_auth)):
     session = Session()
     try:
         endpoints = session.query(ApiEndpoint).all()
         if not endpoints:
-            return jsonify({"message": "No endpoints found"}), 404
+            raise HTTPException(status_code=404, detail={"message": "No endpoints found"})
         
         updated_count = 0
         for endpoint in endpoints:
@@ -595,7 +547,7 @@ def hide_all_from_stats():
                 updated_count += 1
         
         if updated_count == 0:
-            return jsonify({"message": "All endpoints are already hidden from stats"})
+            return {"message": "All endpoints are already hidden from stats"}
         
         session.commit()
         
@@ -616,11 +568,11 @@ def hide_all_from_stats():
             ).model_dump() for e in endpoints
         ]
         
-        return jsonify({
+        return {
             "message": f"Successfully hid {updated_count} endpoints from stats",
             "endpoints": response_data
-        })
-    except json.JSONDecodeError as e:
-        return jsonify({"error": "Invalid JSON in database"}), 500
+        }
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON in database"})
     finally:
         session.close()

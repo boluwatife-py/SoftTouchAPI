@@ -158,6 +158,7 @@ else:
 
 # REGISTER ALL ROUTES
 app.include_router(routes.translate_api, prefix="/api")
+app.include_router(routes.summarize_api, prefix="/api")
 
 
 

@@ -73,7 +73,7 @@ def error_response(message: str):
     }
 
 
-@translate_api.post('/v1/text/translate')
+@translate_api.post('/v1/translate')
 async def translate_text(data: TranslateRequest):
     """Translate text to a target language."""
     texts = data.text  # Already a list due to validator
@@ -137,7 +137,7 @@ async def translate_text(data: TranslateRequest):
         return results
 
 
-@translate_api.post('/v1/text/translate/detect')
+@translate_api.post('/v1/translate/detect')
 async def detect_language(data: DetectRequest):
     """Detect the language of input text."""
     
@@ -172,8 +172,3 @@ async def detect_language(data: DetectRequest):
         'character_count': len(sanitized_text),
         'total_processing_time': round(processing_time, 3)
     }
-
-
-@translate_api.get('/v1/text/error')
-def get_error():
-    raise Exception("This is a test error for the translation API.")

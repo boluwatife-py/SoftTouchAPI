@@ -1,16 +1,24 @@
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 from collections import Counter
 from typing import List, Tuple, Optional
-import re, spacy, time, json
+import re, spacy, time
 from rouge_score import rouge_scorer
+from fastapi.responses import JSONResponse
 
-summarize_api = Blueprint('summarize_api', __name__)
+summarize_api = APIRouter()
+
+class SummarizeRequest(BaseModel):
+    text: str = Field(..., description="Text to be summarized")
+    num_sentences: int = Field(3, ge=1, description="Number of sentences in the summary (default is 3)")
+
 
 # Load spaCy model
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
     raise RuntimeError("Failed to load spaCy model. Run: python -m spacy download en_core_web_sm")
+
 
 def preprocess_text(text: str) -> str:
     """Clean and normalize text."""
@@ -69,81 +77,46 @@ def validate_input(text: Optional[str], num_sentences: Optional[int]) -> Tuple[b
         return False, "Number of sentences must be between 1 and 100"
     return True, ""
 
-@summarize_api.route('/v1/summarize', methods=['POST'])
-def summarize_text():
-    """
-    Summarize input text with enhanced scoring.
-    Request body (JSON):
-    - text: string (required)
-    - num_sentences: integer (optional, default=3)
-    Returns:
-    - input_text: original text
-    - summary: summarized text
-    - sentence_count: number of sentences in summary
-    - original_length: character count of original text
-    - processing_time: seconds
-    - rouge_scores: ROUGE-1/ROUGE-2 metrics
-    """
-    data = request.get_json(silent=True)
-    if not data:
-        raw_data = request.data.decode('utf-8')
-        if not raw_data:
-            return jsonify({'error': 'Request body is empty'}), 400
-        try:
-            data = json.loads(raw_data)
-        except json.JSONDecodeError:
-            return jsonify({'error': 'Invalid JSON format in request body'}), 400
-
-    if not isinstance(data, dict):
-        return jsonify({'error': 'Request body must be a JSON object'}), 400
-
-    text = data.get('text')
-    num_sentences = data.get('num_sentences', 3)
-
+@summarize_api.post('/v1/summarize')
+def summarize_text(data: SummarizeRequest):
     # Validate input
-    is_valid, error_msg = validate_input(text, num_sentences)
+    is_valid, error_msg = validate_input(data.text, data.num_sentences)
     if not is_valid:
-        return jsonify({'error': error_msg}), 400
+        return JSONResponse(content={"error": error_msg}, status_code=400)
 
     start_time = time.time()
-    
-    # Preprocess and score sentences
-    original_text = preprocess_text(text)
+
+    original_text = preprocess_text(data.text)
     sentence_scores = advanced_score_sentences(original_text)
     if not sentence_scores:
-        return jsonify({'error': 'No valid sentences found'}), 400
+        return JSONResponse(content={"error": "No valid sentences found"}, status_code=400)
 
-    # Select top sentences
     sorted_sentences = sorted(sentence_scores, key=lambda x: x[1], reverse=True)
-    summary_sentences = [sent for sent, _ in sorted_sentences[:min(num_sentences, len(sorted_sentences))]]
+    summary_sentences = [sent for sent, _ in sorted_sentences[:min(data.num_sentences, len(sorted_sentences))]]
     summary = ' '.join(sent.rstrip('.!?,') + '.' for sent in summary_sentences if sent.strip())
 
-    # Additional features
     processing_time = time.time() - start_time
-    
-    # ROUGE scores (self-evaluation against original text)
+
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2'], use_stemmer=True)
     rouge_scores = scorer.score(original_text, summary)
 
-    response = {
-        'success': True,
-        'input_text': original_text,
-        'summary': summary,
-        'sentence_count': len(summary_sentences),
-        'original_length': len(original_text),
-        'processing_time': round(processing_time, 3),
-        'rouge_scores': {
-            'rouge1': {
-                'precision': round(rouge_scores['rouge1'].precision, 3),
-                'recall': round(rouge_scores['rouge1'].recall, 3),
-                'f1': round(rouge_scores['rouge1'].fmeasure, 3)
+    return {
+        "success": True,
+        "input_text": original_text,
+        "summary": summary,
+        "sentence_count": len(summary_sentences),
+        "original_length": len(original_text),
+        "processing_time": round(processing_time, 3),
+        "rouge_scores": {
+            "rouge1": {
+                "precision": round(rouge_scores['rouge1'].precision, 3),
+                "recall": round(rouge_scores['rouge1'].recall, 3),
+                "f1": round(rouge_scores['rouge1'].fmeasure, 3)
             },
-            'rouge2': {
-                'precision': round(rouge_scores['rouge2'].precision, 3),
-                'recall': round(rouge_scores['rouge2'].recall, 3),
-                'f1': round(rouge_scores['rouge2'].fmeasure, 3)
+            "rouge2": {
+                "precision": round(rouge_scores['rouge2'].precision, 3),
+                "recall": round(rouge_scores['rouge2'].recall, 3),
+                "f1": round(rouge_scores['rouge2'].fmeasure, 3)
             }
         }
     }
-    
-    return jsonify(response), 200

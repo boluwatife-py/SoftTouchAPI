@@ -1,14 +1,57 @@
-from flask import Blueprint, request, jsonify
+from fastapi import APIRouter, HTTPException
 from collections import Counter
-import re, json, time, traceback, spacy
-from typing import List, Dict, Optional
+import re, json, time, spacy
+from typing import List, Optional
+from pydantic import BaseModel, Field
 
-text_api = Blueprint('text_api', __name__)
+
+text_api = APIRouter()
 
 # Configure logging
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class AnalyzeRequest(BaseModel):
+    text: str = Field(..., description="Text to analyze")
+    num_keywords: int = Field(5, ge=1, le=20, description="Number of top keywords to extract (default is 5)")
+
+class Entity(BaseModel):
+    text: str
+    label: str
+
+class POSTag(BaseModel):
+    text: str
+    pos: str
+
+class AnalyzeResponse(BaseModel):
+    success: bool
+    entities: List[Entity]
+    keywords: List[str]
+    word_count: int
+    pos_tags: List[POSTag]
+    processing_time: float
+
+class SentimentRequest(BaseModel):
+    text: str = Field(..., description="Text to analyze for sentiment")
+
+
+class SentimentScores(BaseModel):
+    polarity: float
+    subjectivity: float
+
+class SentimentLabels(BaseModel):
+    polarity: str
+    subjectivity: str
+
+class SentimentResponse(BaseModel):
+    success: bool
+    sentiment: SentimentScores
+    interpretation: SentimentLabels
+    processing_time: float
+    note: str
+
 
 # Load spaCy model with error handling
 try:
@@ -20,6 +63,7 @@ except OSError:
     }
     
     raise RuntimeError(json.dumps(return_error))
+
 
 def preprocess_text(text: str) -> str:
     """Clean and normalize text."""
@@ -55,8 +99,8 @@ def validate_input(text: Optional[str], max_length: int = 10000) -> tuple[bool, 
         return False, f"Input validation error: {str(e)}"
 
 
-@text_api.route('/v1/analyze', methods=['POST'])
-def analyze_text():
+@text_api.post('/v1/analyze')
+def analyze_text(payload: AnalyzeRequest):
     """
     Analyze text for entities, keywords, word count, and POS tags.
     Request body (JSON):
@@ -69,114 +113,58 @@ def analyze_text():
     - pos_tags: list of part-of-speech tags
     - processing_time: float (seconds)
     """
-    try:
-        data = request.get_json(silent=True)
-        if not data:
-            raw_data = request.data.decode('utf-8')
-            if not raw_data:
-                return jsonify({'error': 'Request body is empty'}), 400
-            try:
-                data = json.loads(raw_data)
-            except json.JSONDecodeError:
-                return jsonify({'error': 'Invalid JSON format in request body'}), 400
+    text = payload.text
+    num_keywords = payload.num_keywords
 
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Request body must be a JSON object'}), 400
+    is_valid, error_msg = validate_input(text)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
-        text = data.get('text')
-        num_keywords = data.get('num_keywords', 5)
+    start_time = time.time()
+    text = preprocess_text(text)
+    doc = nlp(text)
 
-        # Validate input
-        is_valid, error_msg = validate_input(text)
-        if not is_valid:
-            return jsonify({'error': error_msg}), 400
-        
-        if not isinstance(num_keywords, int) or num_keywords < 1 or num_keywords > 20:
-            return jsonify({'error': 'num_keywords must be an integer between 1 and 20'}), 400
+    entities = [{'text': ent.text, 'label': ent.label_} for ent in doc.ents][:5]
+    keywords = extract_keywords(text, num_keywords)
+    word_count = len([token for token in doc if not token.is_space])
+    pos_tags = [{'text': token.text, 'pos': token.pos_} for token in doc][:10]
+    processing_time = round(time.time() - start_time, 3)
 
-        start_time = time.time()
-        text = preprocess_text(text)
-        doc = nlp(text)
+    return AnalyzeResponse(
+        success=True,
+        entities=entities,
+        keywords=keywords,
+        word_count=word_count,
+        pos_tags=pos_tags,
+        processing_time=processing_time
+    )
 
-        # Extract entities
-        entities = [{'text': ent.text, 'label': ent.label_} for ent in doc.ents][:5]
-        
-        # Extract keywords
-        keywords = extract_keywords(text, num_keywords)
-        
-        # Word count and POS tags
-        word_count = len([token for token in doc if not token.is_space])
-        pos_tags = [{'text': token.text, 'pos': token.pos_} for token in doc][:10]
-
-        processing_time = time.time() - start_time
-        return jsonify({
-            'success': True,
-            'entities': entities,
-            'keywords': keywords,
-            'word_count': word_count,
-            'pos_tags': pos_tags,
-            'processing_time': round(processing_time, 3)
-        }), 200
-
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
     
 
-@text_api.route('/v1/sentiment', methods=['POST'])
-def sentiment_analysis():
-    """
-    Analyze text sentiment (polarity only; subjectivity is placeholder).
-    Request body (JSON):
-    - text: string (required)
-    Returns:
-    - sentiment: polarity and subjectivity scores
-    - interpretation: human-readable sentiment labels
-    - processing_time: float (seconds)
-    """
-    try:
-        data = request.get_json(silent=True)
-        if not data:
-            raw_data = request.data.decode('utf-8')
-            if not raw_data:
-                return jsonify({'error': 'Request body is empty'}), 400
-            try:
-                data = json.loads(raw_data)
-            except json.JSONDecodeError:
-                return jsonify({'error': 'Invalid JSON format in request body'}), 400
+@text_api.post('/v1/sentiment')
+def sentiment_analysis(payload: SentimentRequest):
+    text = payload.text
 
-        if not isinstance(data, dict):
-            return jsonify({'error': 'Request body must be a JSON object'}), 400
+    is_valid, error_msg = validate_input(text)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
-        text = data.get('text')
+    start_time = time.time()
+    text = preprocess_text(text)
+    doc = nlp(text)
 
-        # Validate input
-        is_valid, error_msg = validate_input(text)
-        if not is_valid:
-            return jsonify({'error': error_msg}), 400
+    polarity = sum([token.sentiment for token in doc if token.sentiment]) / (len(doc) or 1)
+    subjectivity = 0.5  # placeholder
 
-        start_time = time.time()
-        text = preprocess_text(text)
-        doc = nlp(text)
+    interpretation = {
+        'polarity': 'positive' if polarity > 0.1 else 'negative' if polarity < -0.1 else 'neutral',
+        'subjectivity': 'subjective' if subjectivity > 0.5 else 'objective'
+    }
 
-        # Note: spaCy doesn't natively provide sentiment; this is a placeholder
-        # For real sentiment, integrate a library like TextBlob or VADER
-        polarity = sum([token.sentiment for token in doc if token.sentiment]) / (len(doc) or 1)
-        subjectivity = 0.5  # Placeholder; spaCy doesn’t provide this
-
-        processing_time = time.time() - start_time
-        return jsonify({
-            'success': True,
-            'sentiment': {
-                'polarity': round(polarity, 3),
-                'subjectivity': subjectivity
-            },
-            'interpretation': {
-                'polarity': 'positive' if polarity > 0.1 else 'negative' if polarity < -0.1 else 'neutral',
-                'subjectivity': 'subjective' if subjectivity > 0.5 else 'objective'
-            },
-            'processing_time': round(processing_time, 3),
-            'note': 'Sentiment analysis is limited; consider integrating TextBlob or VADER for better results'
-        }), 200
-
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
+    return SentimentResponse(
+        success=True,
+        sentiment=SentimentScores(polarity=round(polarity, 3), subjectivity=subjectivity),
+        interpretation=SentimentLabels(**interpretation),
+        processing_time=round(time.time() - start_time, 3),
+        note="Sentiment analysis is limited; consider integrating TextBlob or VADER for better results"
+    )

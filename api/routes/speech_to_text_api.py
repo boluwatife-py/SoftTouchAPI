@@ -7,6 +7,8 @@ import os
 import time
 import shutil
 from tempfile import NamedTemporaryFile
+import warnings
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 
 transcribe_api = APIRouter()
 

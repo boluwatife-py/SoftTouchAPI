@@ -1,4 +1,6 @@
-from flask import Blueprint, request, jsonify, send_file, Response
+from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Optional, Tuple
 import qrcode
 from qrcode.image.styledpil import StyledPilImage
 from qrcode.image.styles.moduledrawers import (
@@ -9,17 +11,12 @@ from PIL import Image, ImageDraw
 import io
 import re
 import json
-import base64
 import logging
 import time
 import svgwrite
-from typing import Optional, Tuple
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-qr_api = Blueprint('qr_api', __name__)
+qr_api = APIRouter()
 
 VALID_FORMATS = {'png', 'jpg', 'svg'}
 VALID_STYLES = {
@@ -33,6 +30,7 @@ VALID_STYLES = {
 }
 MAX_FILE_SIZE = 5 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif'}
+
 
 def validate_format(output_format: str) -> Tuple[bool, str]:
     """Validate output format."""
@@ -161,7 +159,7 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
             )
             
         mime_type = 'image/svg+xml'
-        return svg_code, mime_type, None
+        return io.BytesIO(svg_code.encode()), mime_type, None
     else:
         module_drawer = {
             'square': SquareModuleDrawer(),
@@ -203,157 +201,82 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
         return output, mime_type, qr_img
 
 
-@qr_api.route('/v1/generate', methods=['POST'])
-def generate_qr():
-    """
-    Generate and return a stylized QR code with specified resolution, either as a file or raw SVG/JSON.
-    Request body (multipart/form-data or JSON):
-    - data: text or URL to encode (required)
-    - format: output format (optional, default: 'png'; options: 'png', 'jpg', 'svg')
-    - style: QR module style (optional, default: 'square'; options: 'square', 'circle', 'rounded', 'gapped_square', 'vertical_bars', 'horizontal_bars', 'rounded_border')
-    - fill_color: QR code color (optional, default: '#000000')
-    - back_color: background color (optional, default: '#FFFFFF')
-    - resolution: desired width/height in pixels (optional, default: 600; range: 100-2000)
-    - border: border size in boxes (optional, default: 4)
-    - image: optional image file to embed (e.g., logo; PNG/JPG only)
-    Returns: File download if 'Accept' matches mime_type, raw SVG string if 'svg' and 'application/json', otherwise JSON with base64 data.
-    """
-    if request.content_length and request.content_length > MAX_FILE_SIZE:
-        return jsonify({'error': f"Request size exceeds maximum limit of {MAX_FILE_SIZE // 1024}KB"}), 413
-
-    # Parse request data
-    if request.content_type and request.content_type.startswith('multipart/form-data'):
-        if not request.form:
-            return jsonify({'error': "No form data provided in multipart request"}), 400
-        data = request.form.get('data')
-        output_format = request.form.get('format', 'png')
-        style = request.form.get('style', 'square')
-        fill_color = request.form.get('fill_color', '#000000')
-        back_color = request.form.get('back_color', '#FFFFFF')
-        resolution = request.form.get('resolution', '600')
-        border = request.form.get('border', '4')
-        image_file = request.files.get('image')
-    elif request.content_type and 'application/json' in request.content_type:
-        json_data = request.get_json(silent=True)
-        if json_data is None:
-            raw_data = request.data.decode('utf-8', errors='ignore')
-            if not raw_data:
-                return jsonify({'error': "Request body is empty"}), 400
-            try:
-                json_data = json.loads(raw_data)
-            except json.JSONDecodeError:
-                return jsonify({'error': "Invalid JSON format in request body"}), 400
-
-        if not isinstance(json_data, dict):
-            return jsonify({'error': "Request body must be a JSON object"}), 400
+@qr_api.post("/v1/qr/generate")
+async def generate_qr(
+    request: Request,
+    data: str = Form(...),
+    format: str = Form('png'),
+    style: str = Form('square'),
+    fill_color: str = Form('#000000'),
+    back_color: str = Form('#FFFFFF'),
+    resolution: int = Form(600),
+    border: int = Form(4),
+    image: Optional[UploadFile] = File(None)
+):
+    content_type = request.headers.get("Content-Type", "")
+    if "multipart/form-data" not in content_type:
+        try:
+            body = await request.body()
+            json_data = json.loads(body)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid or missing JSON body")
 
         data = json_data.get('data')
-        output_format = json_data.get('format', 'png')
+        format = json_data.get('format', 'png')
         style = json_data.get('style', 'square')
         fill_color = json_data.get('fill_color', '#000000')
         back_color = json_data.get('back_color', '#FFFFFF')
-        resolution = json_data.get('resolution', '600')
-        border = json_data.get('border', '4')
-        image_file = None
-    else:
-        return jsonify({'error': f"Unsupported Content-Type: {request.content_type}"}), 415
+        resolution = int(json_data.get('resolution', 600))
+        border = int(json_data.get('border', 4))
+        image = None
 
-    # Validate inputs
-    if not data or not isinstance(data, str) or not data.strip():
-        return jsonify({'error': "Missing or invalid 'data' field: must be a non-empty string"}), 400
+    if not data:
+        raise HTTPException(status_code=400, detail="Missing 'data' field")
 
-    is_valid_format, format_or_error = validate_format(output_format)
+    is_valid_format, format_or_error = validate_format(format)
     if not is_valid_format:
-        return jsonify({'error': format_or_error}), 400
-    output_format = format_or_error
+        raise HTTPException(status_code=400, detail=format_or_error)
+    format = format_or_error
 
     is_valid_style, style_or_error = validate_style(style)
     if not is_valid_style:
-        return jsonify({'error': style_or_error}), 400
+        raise HTTPException(status_code=400, detail=style_or_error)
     style = style_or_error
 
     is_valid_fill, fill_or_error = validate_color(fill_color, "fill_color")
     if not is_valid_fill:
-        return jsonify({'error': fill_or_error}), 400
+        raise HTTPException(status_code=400, detail=fill_or_error)
     fill_color = fill_or_error
 
     is_valid_back, back_or_error = validate_color(back_color, "back_color")
     if not is_valid_back:
-        return jsonify({'error': back_or_error}), 400
+        raise HTTPException(status_code=400, detail=back_or_error)
     back_color = back_or_error
 
     is_valid_res, res_or_error = validate_integer(resolution, "resolution", 100, 2000)
     if not is_valid_res:
-        return jsonify({'error': res_or_error}), 400
+        raise HTTPException(status_code=400, detail=res_or_error)
     resolution = res_or_error
 
     is_valid_border, border_or_error = validate_integer(border, "border", 0, 20)
     if not is_valid_border:
-        return jsonify({'error': border_or_error}), 400
+        raise HTTPException(status_code=400, detail=border_or_error)
     border = border_or_error
 
-    if image_file:
-        if image_file.content_length > MAX_FILE_SIZE:
-            return jsonify({'error': f"Image size exceeds maximum limit of {MAX_FILE_SIZE // 1024}KB"}), 413
-        if image_file.mimetype not in ALLOWED_IMAGE_TYPES:
-            return jsonify({'error': f"Unsupported image type: {image_file.mimetype}. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"}), 415
+    if image:
+        if image.content_type not in ALLOWED_IMAGE_TYPES:
+            raise HTTPException(status_code=415, detail="Unsupported image type")
+        if image.size and image.size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="Image file too large")
 
-    # Generate QR code
-    output, mime_type, qr_img = generate_qr_image(data, output_format, style, fill_color, back_color, resolution, border, image_file)
-    
-    # Check Accept header to determine response type
-    accept_header = request.headers.get('Accept', '*/*')
-    if mime_type in accept_header or '*/*' in accept_header or 'application/octet-stream' in accept_header:
-        if output_format == 'svg':
-            return Response(
-                output,
-                mimetype='image/svg+xml',
-                headers={'Content-Disposition': 'attachment; filename=qr_code.svg'}
-            )
-        else:
-            filename = f"qr_code.{output_format}"
-            return send_file(
-                output,
-                mimetype=mime_type,
-                as_attachment=True,
-                download_name=filename
-            )
-    else:
-        if output_format == 'svg':
-            response = {
-                'format': output_format,
-                'style': style,
-                'mime_type': mime_type,
-                'svg_code': output,
-                'size_kb': round(len(output) / 1024, 2),
-                'colors': {
-                    'fill': fill_color,
-                    'background': back_color
-                },
-                'resolution': resolution,
-                'border': border,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
-            }
-            return jsonify(response), 200
-        else:
-            qr_base64 = base64.b64encode(output.getvalue()).decode('utf-8')
-            response = {
-                'format': output_format,
-                'style': style,
-                'mime_type': mime_type,
-                'data': f'data:{mime_type};base64,{qr_base64}',
-                'size_kb': round(len(qr_base64) / 1024, 2),
-                'dimensions': {
-                    'width': qr_img.size[0] if qr_img else None,
-                    'height': qr_img.size[1] if qr_img else None
-                },
-                'colors': {
-                    'fill': fill_color,
-                    'background': back_color
-                },
-                'resolution': resolution,
-                'border': border,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
-            }
-            output.close()
-            return jsonify(response), 200
+    output, mime_type, qr_img = generate_qr_image(data, format, style, fill_color, back_color, resolution, border, image.file if image else None)
+
+    filename = f"qr_code.{format}"
+    return StreamingResponse(
+        output,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Length": str(output.getbuffer().nbytes),
+        }
+    )

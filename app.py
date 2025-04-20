@@ -160,6 +160,7 @@ else:
 app.include_router(routes.translate_api, prefix="/api")
 app.include_router(routes.summarize_api, prefix="/api")
 app.include_router(routes.text_api, prefix="/api")
+app.include_router(routes.transcribe_api, prefix="/api")
 
 
 

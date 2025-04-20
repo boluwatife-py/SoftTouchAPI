@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request, Response
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from shared.database import get_db, Session, ApiEndpoint, Statistic, RequestLog, ApiStat
@@ -12,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from utils.discord_bot import send_contact_to_discord, send_error_to_discord, setup_discord_bot
 from pydantic import ValidationError
 from error_handler import configure_error_handlers
+import api.routes as routes
 
 load_dotenv()
 app = FastAPI()
@@ -133,7 +133,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                     db.close()
 
             except Exception as e:
-                print(f"Unhandled error in middleware: {e}")
+                raise
             return response
         else:
             return await call_next(request)
@@ -155,6 +155,19 @@ if discord_token:
     configure_error_handlers(app, send_error_to_discord)
 else:
     configure_error_handlers(app, None)
+
+# REGISTER ALL ROUTES
+app.include_router(routes.translate_api, prefix="/api")
+
+
+
+
+
+
+
+
+
+
 
 API_URL = os.getenv('API_URL')
 

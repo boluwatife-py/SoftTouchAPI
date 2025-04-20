@@ -40,7 +40,6 @@ class InsertUser(BaseModel):
     username: str
     password: str
 
-
 class ContactForm(BaseModel):
     name: str
     email: EmailStr

@@ -143,7 +143,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 app.add_middleware(LoggingMiddleware)
@@ -156,11 +156,10 @@ if discord_token:
 else:
     configure_error_handlers(app, None)
 
-# REGISTER ALL ROUTES
+
 app.include_router(routes.translate_api, prefix="/api")
 app.include_router(routes.summarize_api, prefix="/api")
 app.include_router(routes.text_api, prefix="/api")
-app.include_router(routes.transcribe_api, prefix="/api")
 app.include_router(routes.qr_api, prefix="/api")
 
 

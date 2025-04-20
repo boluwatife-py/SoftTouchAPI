@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from typing import Optional, Tuple
 import qrcode
 from qrcode.image.styledpil import StyledPilImage

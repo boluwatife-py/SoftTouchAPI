@@ -104,7 +104,7 @@ async def translate_text(data: TranslateRequest):
 
         # Handle language detection if needed
         if src == 'auto':
-            detected = await translator.detect(sanitized_text)
+            detected = translator.detect(sanitized_text)
             src_to_use = detected.lang if detected.confidence > 0.9 else 'auto'
         else:
             is_valid_src, src_or_error = validate_language(src)
@@ -112,7 +112,7 @@ async def translate_text(data: TranslateRequest):
                 return error_response(src_or_error)
 
         # Perform translation
-        translated = await translator.translate(sanitized_text, src=src_to_use, dest=dest)
+        translated = translator.translate(sanitized_text, src=src_to_use, dest=dest)
 
         results.append({
             'input_text': sanitized_text,
@@ -161,7 +161,7 @@ async def detect_language(data: DetectRequest):
     sanitized_text = text_result
 
     start_time = time.time()
-    detected = await translator.detect(sanitized_text)
+    detected = translator.detect(sanitized_text)
     processing_time = time.time() - start_time
 
     return {

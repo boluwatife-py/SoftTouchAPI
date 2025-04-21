@@ -8,7 +8,6 @@ from qrcode.image.styles.moduledrawers import (
     SquareModuleDrawer, CircleModuleDrawer, RoundedModuleDrawer,
     GappedSquareModuleDrawer, VerticalBarsDrawer, HorizontalBarsDrawer
 )
-from PIL import Image, ImageDraw
 import io
 import re
 import logging
@@ -24,8 +23,7 @@ VALID_STYLES = {
     'rounded': 'rounded',
     'gapped_square': 'gapped_square',
     'vertical_bars': 'vertical_bars',
-    'horizontal_bars': 'horizontal_bars',
-    'rounded_border': 'square'
+    'horizontal_bars': 'horizontal_bars'
 }
 
 class QRRequest(BaseModel):
@@ -54,19 +52,6 @@ class QRRequest(BaseModel):
         if not re.match(r'^#(?:[0-9a-fA-F]{3}){1,2}$', v):
             raise ValueError(f"Invalid color: {v}. Use hex code (e.g., '#FF0000').")
         return v
-
-def apply_rounded_border(image: Image.Image, radius: int = 40) -> Image.Image:
-    """Apply a rounded border to the image."""
-    mask = Image.new('L', image.size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle(
-        [(0, 0), image.size],
-        radius=radius,
-        fill=255
-    )
-    output = Image.new('RGBA', image.size, (0, 0, 0, 0))
-    output.paste(image, (0, 0), mask)
-    return output
 
 def calculate_box_size(qr: qrcode.QRCode, resolution: int) -> int:
     """Calculate box_size based on desired resolution and QR module count."""
@@ -122,28 +107,17 @@ def generate_svg_qr(qr: qrcode.QRCode, style: str, fill_color: str, back_color: 
                         size=(box_size, box_size * 0.5),
                         fill=fill_color
                     ))
-                else:  # square or rounded_border
+                else:  # square
                     dwg.add(dwg.rect(
                         insert=(pos_x, pos_y),
                         size=(box_size, box_size),
                         fill=fill_color
                     ))
 
-    # Apply rounded border if needed
-    if style == 'rounded_border':
-        # Wrap content in a clip path for rounded corners
-        svg_content = dwg.tostring()
-        return (
-            f'<svg width="{total_size}" height="{total_size}" xmlns="http://www.w3.org/2000/svg">'
-            f'<clipPath id="rounded"><rect x="0" y="0" width="{total_size}" height="{total_size}" rx="{total_size * 0.05}" ry="{total_size * 0.05}"/></clipPath>'
-            f'<g clip-path="url(#rounded)">{svg_content}</g>'
-            f'</svg>'
-        )
-
     return dwg.tostring()
 
 def generate_qr_image(data: str, output_format: str, style: str, fill_color: str, back_color: str, 
-                     resolution: int, border: int) -> Tuple[io.BytesIO, str, Image.Image]:
+                     resolution: int, border: int) -> Tuple[io.BytesIO, str]:
     """Generate QR code with specified resolution."""
     qr = qrcode.QRCode(
         version=None,
@@ -160,7 +134,7 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
     if output_format == 'svg':
         svg_code = generate_svg_qr(qr, style, fill_color, back_color, resolution)
         mime_type = 'image/svg+xml'
-        return io.BytesIO(svg_code.encode()), mime_type, None
+        return io.BytesIO(svg_code.encode()), mime_type
     else:
         module_drawer = {
             'square': SquareModuleDrawer(),
@@ -168,8 +142,7 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
             'rounded': RoundedModuleDrawer(),
             'gapped_square': GappedSquareModuleDrawer(),
             'vertical_bars': VerticalBarsDrawer(),
-            'horizontal_bars': HorizontalBarsDrawer(),
-            'rounded_border': SquareModuleDrawer()
+            'horizontal_bars': HorizontalBarsDrawer()
         }[style]
         qr_img = qr.make_image(
             image_factory=StyledPilImage,
@@ -178,9 +151,6 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
             back_color=back_color
         )
 
-        if style == 'rounded_border':
-            qr_img = apply_rounded_border(qr_img)
-
         output = io.BytesIO()
         save_format = output_format.upper()
         if save_format == 'JPG':
@@ -188,11 +158,11 @@ def generate_qr_image(data: str, output_format: str, style: str, fill_color: str
         qr_img.save(output, format=save_format)
         mime_type = 'image/png' if output_format == 'png' else 'image/jpeg'
         output.seek(0)
-        return output, mime_type, qr_img
+        return output, mime_type
 
 @qr_api.post("/v1/qr/generate")
 async def generate_qr(request: QRRequest):
-    output, mime_type, _ = generate_qr_image(
+    output, mime_type = generate_qr_image(
         data=request.data,
         output_format=request.format,
         style=request.style,

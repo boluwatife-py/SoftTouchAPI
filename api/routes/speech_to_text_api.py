@@ -1,12 +1,12 @@
 from fastapi import APIRouter, UploadFile, Form, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, constr
-from typing import Optional
 import whisper
 import os
 import time
+from tempfile import gettempdir
 import shutil
-from tempfile import NamedTemporaryFile
+import uuid
+from typing import Optional
 import warnings
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 
@@ -47,13 +47,18 @@ async def transcribe_audio(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
+    # Generate unique temporary file name
+    temp_dir = gettempdir()
+    unique_id = str(uuid.uuid4())
+    temp_filename = f"transcribe_{unique_id}{os.path.splitext(audio.filename)[-1]}"
+    temp_path = os.path.join(temp_dir, temp_filename)
+
     start_time = time.time()
 
     try:
         # Save file temporarily
-        with NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio.filename)[-1]) as tmp:
+        with open(temp_path, 'wb') as tmp:
             shutil.copyfileobj(audio.file, tmp)
-            temp_path = tmp.name
 
         # Run Whisper transcription
         options = {"language": language} if language else {}
@@ -64,4 +69,6 @@ async def transcribe_audio(
         return transcription
 
     except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")

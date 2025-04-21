@@ -23,9 +23,6 @@ python -m pip cache purge
 python -m pip install --upgrade pip
 
 # Install Python dependencies
-# - OpenAI Whisper from GitHub (includes torch by default)
-# - Werkzeug for secure_filename
-# - Flask for the API
 python -m pip install git+https://github.com/openai/whisper.git werkzeug flask
 
 # Install additional requirements from requirements.txt (if it exists)
@@ -36,31 +33,37 @@ fi
 # Install spaCy English model
 python -m spacy download en_core_web_sm
 
-# Install FFmpeg (required by Whisper for audio processing)
-# Option 1: System-wide install (requires sudo)
+# === Install FFmpeg (for Whisper) ===
 if command -v sudo >/dev/null 2>&1 && command -v apt >/dev/null 2>&1; then
     echo "Installing FFmpeg system-wide with apt..."
     sudo apt update
     sudo apt install -y ffmpeg
 else
-    # Option 2: Install FFmpeg locally (no sudo required)
-    echo "Sudo or apt not available, installing FFmpeg locally..."
+    echo "Installing FFmpeg locally..."
     FFmpeg_DIR="$HOME/ffmpeg"
     if ! command -v ffmpeg >/dev/null 2>&1; then
         wget -q https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
         tar -xf ffmpeg-release-amd64-static.tar.xz
         mkdir -p "$FFmpeg_DIR"
         mv ffmpeg-*-static/ffmpeg "$FFmpeg_DIR/"
-        mv ffmpeg-*-static/ffprobe "$FFmpeg_DIR/" || true  # ffprobe is optional
+        mv ffmpeg-*-static/ffprobe "$FFmpeg_DIR/" || true
         rm -rf ffmpeg-*-static ffmpeg-release-amd64-static.tar.xz
-        # Add FFmpeg to PATH
         echo "export PATH=\"$FFmpeg_DIR:\$PATH\"" >> ~/.bashrc
         export PATH="$FFmpeg_DIR:$PATH"
     fi
 fi
 
+# === Install Tesseract OCR (for image text extraction) ===
+if command -v sudo >/dev/null 2>&1 && command -v apt >/dev/null 2>&1; then
+    echo "Installing Tesseract OCR system-wide with apt..."
+    sudo apt install -y tesseract-ocr
+else
+    echo "Please install Tesseract manually. Auto-install not supported for this system."
+fi
+
 # Verify installations
 echo "Verifying installations..."
-ffmpeg -version | head -n 1 || echo "FFmpeg not in PATH, check installation"
+ffmpeg -version | head -n 1 || echo "FFmpeg not in PATH"
+tesseract --version | head -n 1 || echo "Tesseract not in PATH"
 
 echo "Setup complete! Activate your environment and run the app."

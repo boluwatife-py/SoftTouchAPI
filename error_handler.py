@@ -26,6 +26,13 @@ logger.addHandler(handler)
 
 def configure_error_handlers(app: FastAPI, discord_callback=None):
     """Configure FastAPI error handlers with Discord notification for server errors and CORS headers"""
+
+    CORS_HEADERS = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+    }
+
     @app.exception_handler(Exception)
     def handle_exception(request: Request, exc: Exception):
         """Global exception handler for uncaught exceptions (server errors)"""
@@ -55,7 +62,8 @@ def configure_error_handlers(app: FastAPI, discord_callback=None):
             content={
                 'error': 'Internal Server Error',
                 'message': str(exc) if app.debug else 'An unexpected error occurred'
-            }
+            },
+            headers=CORS_HEADERS
         )
         return response
     
@@ -110,6 +118,7 @@ def configure_error_handlers(app: FastAPI, discord_callback=None):
             content={
                 'error': error_type,
                 'message': message
-            }
+            },
+            headers=CORS_HEADERS
         )
         return response

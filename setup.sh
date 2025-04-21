@@ -16,6 +16,14 @@ else
     exit 1
 fi
 
+# === Install Tesseract OCR (for image text extraction) ===
+if command -v sudo >/dev/null 2>&1 && command -v apt >/dev/null 2>&1; then
+    echo "Installing Tesseract OCR system-wide with apt..."
+    sudo apt install -y tesseract-ocr
+else
+    echo "Please install Tesseract manually. Auto-install not supported for this system."
+fi
+
 # Purge pip cache to ensure fresh installs
 python -m pip cache purge
 
@@ -51,14 +59,6 @@ else
         echo "export PATH=\"$FFmpeg_DIR:\$PATH\"" >> ~/.bashrc
         export PATH="$FFmpeg_DIR:$PATH"
     fi
-fi
-
-# === Install Tesseract OCR (for image text extraction) ===
-if command -v sudo >/dev/null 2>&1 && command -v apt >/dev/null 2>&1; then
-    echo "Installing Tesseract OCR system-wide with apt..."
-    sudo apt install -y tesseract-ocr
-else
-    echo "Please install Tesseract manually. Auto-install not supported for this system."
 fi
 
 # Verify installations

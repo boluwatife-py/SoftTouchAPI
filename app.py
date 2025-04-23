@@ -183,84 +183,90 @@ def root():
 @app.get("/statistics")
 def statistics_endpoints():
     session = Session()
-    stat = session.query(Statistic).filter_by(id=1).first()
-    visible_endpoints = session.query(ApiEndpoint).filter_by(is_visible_in_stats=True).all()
-    visible_ed = {e.endpoint for e in visible_endpoints}
-    apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_ed)).all()
-    
-    stats = {
-        "totalRequests": stat.total_requests if stat else 0,
-        "uniqueUsers": stat.unique_users if stat else 0,
-        "timestamp": stat.timestamp.isoformat() if stat else datetime.now(dt.UTC).isoformat(),
-        "apis": [
-            {
-                "name": api.name,
-                "dailyRequests": api.daily_requests,
-                "weeklyRequests": api.weekly_requests,
-                "monthlyRequests": api.monthly_requests,
-                "averageResponseTime": api.average_response_time,
-                "successRate": api.success_rate,
-                "popularity": api.popularity
-            } for api in apis
-        ]
-    }
-    return stats
+    try:
+        stat = session.query(Statistic).filter_by(id=1).first()
+        visible_endpoints = session.query(ApiEndpoint).filter_by(is_visible_in_stats=True).all()
+        visible_ed = {e.endpoint for e in visible_endpoints}
+        apis = session.query(ApiStat).filter(ApiStat.name.in_(visible_ed)).all()
+        
+        stats = {
+            "totalRequests": stat.total_requests if stat else 0,
+            "uniqueUsers": stat.unique_users if stat else 0,
+            "timestamp": stat.timestamp.isoformat() if stat else datetime.now(dt.UTC).isoformat(),
+            "apis": [
+                {
+                    "name": api.name,
+                    "dailyRequests": api.daily_requests,
+                    "weeklyRequests": api.weekly_requests,
+                    "monthlyRequests": api.monthly_requests,
+                    "averageResponseTime": api.average_response_time,
+                    "successRate": api.success_rate,
+                    "popularity": api.popularity
+                } for api in apis
+            ]
+        }
+        return stats
+    finally:
+        session.close()
 
 
 @app.get("/endpoint")
 def get_enabled_endpoints():
     session = Session()
-    endpoints = session.query(ApiEndpoint).filter_by(enabled=True).all()
-    
-    api_endpoints = []
-    for e in endpoints:
-        try:
-            params = json.loads(e.params) if e.params else []
-        except json.JSONDecodeError:
-            params = []
-        try:
-            sample_request = json.loads(e.sample_request) if e.sample_request else {}
-        except json.JSONDecodeError:
-            sample_request = {}
-        try:
-            sample_response = json.loads(e.sample_response) if e.sample_response else {}
-        except json.JSONDecodeError:
-            sample_response = {}
+    try:
+        endpoints = session.query(ApiEndpoint).filter_by(enabled=True).all()
+        
+        api_endpoints = []
+        for e in endpoints:
+            try:
+                params = json.loads(e.params) if e.params else []
+            except json.JSONDecodeError:
+                params = []
+            try:
+                sample_request = json.loads(e.sample_request) if e.sample_request else {}
+            except json.JSONDecodeError:
+                sample_request = {}
+            try:
+                sample_response = json.loads(e.sample_response) if e.sample_response else {}
+            except json.JSONDecodeError:
+                sample_response = {}
 
-        endpoint_data = ApiEndpointSchema(
-            id=e.id,
-            name=e.name,
-            method=e.method,
-            endpoint=e.endpoint,
-            response_type=e.response_type,
-            part_description=e.part_description,
-            description=e.description,
-            params=params,
-            sample_request=sample_request,
-            sample_response=sample_response,
-            enabled=e.enabled,
-            is_visible_in_stats=e.is_visible_in_stats
-        )
-        formatted_endpoint = {
-            "name": endpoint_data.name,
-            "method": endpoint_data.method,
-            "endpoint": f"{API_URL}{endpoint_data.endpoint}",
-            "response_type": endpoint_data.response_type,
-            "sample_response": endpoint_data.sample_response,
-            "part_description": endpoint_data.part_description,
-            "description": endpoint_data.description,
-            "params": [
-                {
-                    "name": p.name,
-                    "type": p.type,
-                    "description": p.description
-                } for p in endpoint_data.params
-            ],
-            "sample_request": endpoint_data.sample_request
-        }
-        api_endpoints.append(formatted_endpoint)
-    
-    return api_endpoints
+            endpoint_data = ApiEndpointSchema(
+                id=e.id,
+                name=e.name,
+                method=e.method,
+                endpoint=e.endpoint,
+                response_type=e.response_type,
+                part_description=e.part_description,
+                description=e.description,
+                params=params,
+                sample_request=sample_request,
+                sample_response=sample_response,
+                enabled=e.enabled,
+                is_visible_in_stats=e.is_visible_in_stats
+            )
+            formatted_endpoint = {
+                "name": endpoint_data.name,
+                "method": endpoint_data.method,
+                "endpoint": f"{API_URL}{endpoint_data.endpoint}",
+                "response_type": endpoint_data.response_type,
+                "sample_response": endpoint_data.sample_response,
+                "part_description": endpoint_data.part_description,
+                "description": endpoint_data.description,
+                "params": [
+                    {
+                        "name": p.name,
+                        "type": p.type,
+                        "description": p.description
+                    } for p in endpoint_data.params
+                ],
+                "sample_request": endpoint_data.sample_request
+            }
+            api_endpoints.append(formatted_endpoint)
+        
+        return api_endpoints
+    finally:
+        session.close()
 
 
 @app.post("/contact")

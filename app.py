@@ -12,132 +12,97 @@ from utils.discord_bot import send_contact_to_discord, send_error_to_discord, se
 from pydantic import ValidationError
 from error_handler import configure_error_handlers
 import api.routes as routes
+import asyncio
+from typing import Callable
+import logging
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
 app = FastAPI()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    def update_summary_stats(self):
-        session = Session()
-        try:
-            stat = session.query(Statistic).filter_by(id=1).first()
-            request_logs = session.query(RequestLog).all()
-            unique_users = len({log.client_ip for log in request_logs})
-            total_requests = len(request_logs)
-            
-            if not stat:
-                stat = Statistic(id=1, total_requests=total_requests, unique_users=unique_users, timestamp=datetime.now(dt.UTC))
-                session.add(stat)
-            else:
-                stat.total_requests = total_requests
-                stat.unique_users = unique_users
-                stat.timestamp = datetime.now(dt.UTC)
-            
-            session.commit()
-        finally:
-            session.close()
+# Database configuration
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/softtouch")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
-    def update_api_stats(self, api_name, response_time, status_code):
-        session = Session()
-        try:
-            api = session.query(ApiStat).filter_by(name=api_name).first()
-            current_time = datetime.now(dt.UTC)
-            success = status_code < 400
-            
-            if api:
-                daily_requests = api.daily_requests + 1
-                weekly_requests = api.weekly_requests + 1
-                monthly_requests = api.monthly_requests + 1
-                
-                last_updated = api.last_updated or current_time
-                # Ensure last_updated is offset-aware
-                if last_updated.tzinfo is None:
-                    last_updated = last_updated.replace(tzinfo=dt.UTC)
-                
-                reset_daily = current_time.date() > last_updated.date()
-                reset_weekly = current_time - last_updated > timedelta(weeks=1)
-                reset_monthly = current_time - last_updated > timedelta(days=30)
-                
-                if reset_daily:
-                    daily_requests = 1
-                    avg_response_time = response_time
-                    success_rate = 100 if success else 0
-                else:
-                    avg_response_time = (
-                        (api.average_response_time * api.daily_requests + response_time)
-                        / daily_requests
-                    )
-                    prev_successes = (api.success_rate / 100) * api.daily_requests
-                    new_successes = prev_successes + (1 if success else 0)
-                    success_rate = (new_successes / daily_requests) * 100
-                
-                if reset_weekly:
-                    weekly_requests = 1
-                if reset_monthly:
-                    monthly_requests = 1
-                    
-                popularity = min(100.0, monthly_requests / 10.0)
-                
-                api.daily_requests = daily_requests
-                api.weekly_requests = weekly_requests
-                api.monthly_requests = monthly_requests
-                api.average_response_time = avg_response_time
-                api.success_rate = success_rate
-                api.popularity = popularity
-                api.last_updated = current_time
-            else:
-                api = ApiStat(
-                    name=api_name,
-                    daily_requests=1,
-                    weekly_requests=1,
-                    monthly_requests=1,
-                    average_response_time=response_time,
-                    success_rate=100 if success else 0,
-                    popularity=0.1,
-                    last_updated=current_time
-                )
-                session.add(api)
-            
-            session.commit()
-        finally:
-            session.close()
+# Define the RequestLog model
+class RequestLog(Base):
+    __tablename__ = "request_logs"
 
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path.startswith("/api"):
-            start_time = time.time()
-            client_ip = request.client.host
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(String)
+    method = Column(String)
+    status_code = Column(Integer)
+    response_time = Column(Float)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    request_body = Column(Text, nullable=True)
+    response_body = Column(Text, nullable=True)
 
-            response = Response("Internal server error", status_code=500)
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+class LoggingMiddleware:
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    async def __call__(self, request: Request, call_next: Callable) -> Response:
+        start_time = time.time()
+        
+        # Get request body
+        request_body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
             try:
-                response = await call_next(request)
-                response_time = (time.time() - start_time) * 1000
+                request_body = await request.body()
+                request_body = request_body.decode()
+            except:
+                request_body = "Could not read request body"
 
-                db = Session()
-                try:
-                    request_log = RequestLog(
-                        api_name=request.url.path,
-                        client_ip=client_ip,
-                        response_time=response_time,
-                        status_code=response.status_code,
-                        timestamp=datetime.now(timezone.utc)
-                    )
-                    db.add(request_log)
-                    db.commit()
-
-                    self.update_api_stats(request.url.path, response_time, response.status_code)
-                    self.update_summary_stats()
-                except Exception as e:
-                    db.rollback()
-                finally:
-                    db.close()
-
-            except Exception as e:
-                raise
-            return response
-        else:
-            return await call_next(request)
-
+        # Process the request
+        response = await call_next(request)
+        
+        # Calculate response time
+        process_time = time.time() - start_time
+        
+        # Get response body
+        response_body = None
+        if isinstance(response, JSONResponse):
+            response_body = response.body.decode()
+        
+        # Create log entry
+        log_entry = {
+            "endpoint": str(request.url.path),
+            "method": request.method,
+            "status_code": response.status_code,
+            "response_time": process_time,
+            "request_body": request_body,
+            "response_body": response_body
+        }
+        
+        # Log to console
+        logger.info(f"Request: {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.2f}s")
+        
+        # Store log in database asynchronously
+        asyncio.create_task(self._store_log(log_entry))
+        
+        return response
+    
+    async def _store_log(self, log_entry: dict):
+        try:
+            db = SessionLocal()
+            log = RequestLog(**log_entry)
+            db.add(log)
+            db.commit()
+        except Exception as e:
+            logger.error(f"Error storing log: {str(e)}")
+        finally:
+            db.close()
 
 app.add_middleware(
     CORSMiddleware,
@@ -148,7 +113,6 @@ app.add_middleware(
 )
 app.add_middleware(LoggingMiddleware)
 
-
 discord_token = os.getenv("DISCORD_TOKEN")
 if discord_token:
     setup_discord_bot()
@@ -156,29 +120,17 @@ if discord_token:
 else:
     configure_error_handlers(app, None)
 
-
 app.include_router(routes.translate_api, prefix="/api")
 app.include_router(routes.summarize_api, prefix="/api")
 app.include_router(routes.text_api, prefix="/api")
 app.include_router(routes.qr_api, prefix="/api")
 app.include_router(routes.ocr_api, prefix="/api")
 
-
-
-
-
-
-
-
-
-
-
 API_URL = os.getenv('API_URL')
 
 @app.get("/", tags=['Root'])
 def root():
     return {"message": "SoftTouch API is running"}
-
 
 @app.get("/statistics")
 def statistics_endpoints():
@@ -208,7 +160,6 @@ def statistics_endpoints():
         return stats
     finally:
         session.close()
-
 
 @app.get("/endpoint")
 def get_enabled_endpoints():
@@ -268,7 +219,6 @@ def get_enabled_endpoints():
     finally:
         session.close()
 
-
 @app.post("/contact")
 def submit_contact_form(data: ContactForm):
     try:
@@ -287,3 +237,7 @@ def submit_contact_form(data: ContactForm):
             status_code=400,
             content={'error': 'Invalid form data', 'details': e.errors()}
         )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
